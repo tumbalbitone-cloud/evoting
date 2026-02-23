@@ -26,16 +26,12 @@ export default function ProfilePage() {
     }, []);
 
     const handleLogout = () => {
-        // Clear Auth Data
         localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
         localStorage.removeItem("role");
         localStorage.removeItem("username");
-
-        // Optional: Disconnect wallet if desired, but usually wallet state is separate.
-        // For better UX, we might just leave the wallet connected or implement a disconnect function in WalletContext.
-
-        // Force refresh or redirect to ensure Navbar updates
-        window.location.href = "/";
+        window.dispatchEvent(new Event("auth-change"));
+        router.push("/");
     };
 
     if (!username) return null;

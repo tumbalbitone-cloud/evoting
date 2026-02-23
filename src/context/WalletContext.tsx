@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { ethers, BrowserProvider } from "ethers";
+import toast from "react-hot-toast";
+import { getRpcErrorMessage } from "../utils/rpcError";
 
 interface WalletContextType {
     account: string | null;
@@ -46,7 +48,6 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
             try {
                 await provider.send("wallet_switchEthereumChain", [{ chainId: "0x7a69" }]); // 31337 in hex
             } catch (switchError: any) {
-                // This error code indicates that the chain has not been added to MetaMask.
                 if (switchError.code === 4902) {
                     try {
                         await provider.send("wallet_addEthereumChain", [
@@ -63,7 +64,10 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                         ]);
                     } catch (addError) {
                         console.error(addError);
+                        toast.error(getRpcErrorMessage(addError));
                     }
+                } else {
+                    toast.error(getRpcErrorMessage(switchError));
                 }
             }
         }
@@ -71,7 +75,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
 
     const connectWallet = async () => {
         if (!provider) {
-            alert("Please install MetaMask!");
+            toast.error("Please install MetaMask!");
             return;
         }
         try {
@@ -80,6 +84,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
             setAccount(accounts[0]);
         } catch (error) {
             console.error("Connection rejected", error);
+            toast.error(getRpcErrorMessage(error));
         }
     };
 

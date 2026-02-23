@@ -3,9 +3,13 @@
 import React, { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { useWallet } from "../../context/WalletContext";
-import VotingArtifact from "../../contracts/Voting.json";
+import VotingArtifact from "../../contracts/VotingSystem.json";
 
 import { useRouter } from "next/navigation";
+import io from "socket.io-client"; // Import Socket.io
+import toast from "react-hot-toast";
+import { getValidToken } from "../../utils/auth";
+import { getRpcErrorMessage } from "../../utils/rpcError";
 
 interface Session {
     id: number;
@@ -31,12 +35,16 @@ export default function AdminPage() {
 
     // Candidate State
     const [candidateName, setCandidateName] = useState("");
+    const [candidatePhotoUrl, setCandidatePhotoUrl] = useState("");
+    const [candidateVision, setCandidateVision] = useState("");
+    const [candidateMission, setCandidateMission] = useState("");
     const [targetSessionId, setTargetSessionId] = useState(1);
 
     // User Management State
     const [newUserName, setNewUserName] = useState("");
     const [newUserStudentId, setNewUserStudentId] = useState("");
     const [newUserPassword, setNewUserPassword] = useState("");
+    const [refreshKey, setRefreshKey] = useState(0); // Trigger re-fetch
 
     useEffect(() => {
         // Simple Role Check (Security should be done on backend/contract too)
@@ -47,16 +55,51 @@ export default function AdminPage() {
     }, [router]);
 
     useEffect(() => {
-        if (provider) {
-            fetchSessions();
-        }
+        if (provider) fetchSessions();
+    }, [provider, refreshKey]);
+
+    // Refetch when user returns to tab so admin list updates without reload
+    useEffect(() => {
+        const onVisible = () => {
+            if (document.visibilityState === "visible" && provider) fetchSessions();
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => document.removeEventListener("visibilitychange", onVisible);
     }, [provider]);
+
+    // ---------------------------------------------------------
+    // REAL-TIME UPDATES VIA SOCKET.IO
+    // ---------------------------------------------------------
+    useEffect(() => {
+        const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001");
+
+        socket.on("connect", () => {
+            console.log("🟢 Admin Connected to Real-time Updates");
+        });
+
+        // Listen for new sessions
+        socket.on("session_created", () => {
+            console.log("🆕 New session created, refreshing admin list...");
+            setRefreshKey(prev => prev + 1);
+        });
+
+        // Listen for session status changes
+        socket.on("session_update", () => {
+            console.log("🔄 Session status updated, refreshing admin list...");
+            setRefreshKey(prev => prev + 1);
+        });
+
+        // Cleanup on unmount
+        return () => {
+            socket.disconnect();
+        };
+    }, []);
 
     const fetchSessions = async () => {
         try {
             const readProvider = provider || new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
             const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS!,
+                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
                 VotingArtifact.abi,
                 readProvider
             );
@@ -78,6 +121,7 @@ export default function AdminPage() {
             setSessions(formattedSessions);
         } catch (err) {
             console.error("Error fetching sessions:", err);
+            toast.error(getRpcErrorMessage(err));
         }
     };
 
@@ -87,7 +131,7 @@ export default function AdminPage() {
         try {
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS!,
+                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
                 VotingArtifact.abi,
                 signer
             );
@@ -98,12 +142,12 @@ export default function AdminPage() {
 
             const tx = await contract.createSession(sessionName, sessionDesc, now, endTime);
             await tx.wait();
-            alert(`Session "${sessionName}" Created!`);
+            toast.success(`Sesi "${sessionName}" berhasil dibuat`);
             setSessionName("");
             setSessionDesc("");
             fetchSessions(); // Refresh list
         } catch (err: any) {
-            alert("Error: " + (err.reason || err.message));
+            toast.error(getRpcErrorMessage(err));
         }
         setLoading(false);
     };
@@ -116,17 +160,17 @@ export default function AdminPage() {
         try {
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS!,
+                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
                 VotingArtifact.abi,
                 signer
             );
 
             const tx = await contract.setSessionStatus(sessionId, !currentStatus);
             await tx.wait();
-            alert(`Session ${sessionId} status updated!`);
+            toast.success(`Sesi ${sessionId} status diperbarui`);
             fetchSessions(); // Refresh list
         } catch (err: any) {
-            alert("Error: " + (err.reason || err.message));
+            toast.error(getRpcErrorMessage(err));
         }
         setLoading(false);
     };
@@ -137,33 +181,43 @@ export default function AdminPage() {
         try {
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS!,
+                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
                 VotingArtifact.abi,
                 signer
             );
 
-            const tx = await contract.addCandidate(targetSessionId, candidateName);
+            const tx = await contract.addCandidate(targetSessionId, candidateName, candidatePhotoUrl, candidateVision, candidateMission);
             await tx.wait();
-            alert(`Candidate "${candidateName}" Added to Session ${targetSessionId}!`);
+            toast.success(`Kandidat "${candidateName}" ditambahkan ke Sesi ${targetSessionId}`);
             setCandidateName("");
+            setCandidatePhotoUrl("");
+            setCandidateVision("");
+            setCandidateMission("");
         } catch (err: any) {
-            alert("Error: " + (err.reason || err.message));
+            toast.error(getRpcErrorMessage(err));
         }
         setLoading(false);
     };
 
     const handleAddUser = async () => {
         if (!newUserName || !newUserStudentId || !newUserPassword) {
-            alert("Please fill all fields");
+            toast.error("Isi semua field");
             return;
         }
         setLoading(true);
         try {
+            const token = getValidToken();
+            if (!token) {
+                toast.error("Sesi habis. Silakan login lagi.");
+                router.push("/login");
+                setLoading(false);
+                return;
+            }
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/create`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-user-role': 'admin' // Mock admin check
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
                     name: newUserName,
@@ -174,15 +228,15 @@ export default function AdminPage() {
 
             const data = await res.json();
             if (res.ok) {
-                alert("User Created Successfully!");
+                toast.success("User berhasil dibuat");
                 setNewUserName("");
                 setNewUserStudentId("");
                 setNewUserPassword("");
             } else {
-                alert("Error: " + data.error);
+                toast.error("Error: " + data.error);
             }
         } catch (err: any) {
-            alert("Error: " + err.message);
+            toast.error("Error: " + err.message);
         }
         setLoading(false);
     };
@@ -310,6 +364,76 @@ export default function AdminPage() {
                                 placeholder="Candidate Name"
                                 value={candidateName}
                                 onChange={(e) => setCandidateName(e.target.value)}
+                                className="w-full bg-dark-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500 text-white"
+                            />
+                            <div className="space-y-2">
+                                <label className="text-gray-400 text-sm">Candidate Photo (Upload or URL)</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={async (e) => {
+                                            const file = e.target.files?.[0];
+                                            if (!file) return;
+
+                                            const formData = new FormData();
+                                            formData.append('image', file);
+
+                                            setLoading(true);
+                                            try {
+                                                const token = getValidToken();
+                                                if (!token) {
+                                                    toast.error("Sesi habis. Silakan login lagi.");
+                                                    router.push("/login");
+                                                    setLoading(false);
+                                                    return;
+                                                }
+                                                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload`, {
+                                                    method: 'POST',
+                                                    headers: { 'Authorization': `Bearer ${token}` },
+                                                    body: formData
+                                                });
+                                                const data = await res.json();
+                                                if (data.success) {
+                                                    setCandidatePhotoUrl(data.url);
+                                                    toast.success("Foto berhasil diunggah");
+                                                } else {
+                                                    toast.error("Upload gagal: " + data.error);
+                                                }
+                                            } catch (err) {
+                                                console.error(err);
+                                                toast.error("Upload gagal");
+                                            }
+                                            setLoading(false);
+                                        }}
+                                        className="text-white text-sm"
+                                    />
+                                    <span className="text-gray-500 self-center">OR</span>
+                                    <input
+                                        type="text"
+                                        placeholder="Image URL"
+                                        value={candidatePhotoUrl}
+                                        onChange={(e) => setCandidatePhotoUrl(e.target.value)}
+                                        className="w-full bg-dark-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500 text-white"
+                                    />
+                                </div>
+                                {candidatePhotoUrl && (
+                                    <div className="mt-2">
+                                        <p className="text-gray-500 text-xs mb-1">Preview:</p>
+                                        <img src={candidatePhotoUrl} alt="Preview" className="w-20 h-20 object-cover rounded-lg border border-gray-600" />
+                                    </div>
+                                )}
+                            </div>
+                            <textarea
+                                placeholder="Vision"
+                                value={candidateVision}
+                                onChange={(e) => setCandidateVision(e.target.value)}
+                                className="w-full bg-dark-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500 text-white"
+                            />
+                            <textarea
+                                placeholder="Mission"
+                                value={candidateMission}
+                                onChange={(e) => setCandidateMission(e.target.value)}
                                 className="w-full bg-dark-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500 text-white"
                             />
                             <button

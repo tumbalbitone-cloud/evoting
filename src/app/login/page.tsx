@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import toast from "react-hot-toast";
 
 export default function LoginPage() {
     const [username, setUsername] = useState("");
@@ -24,27 +25,26 @@ export default function LoginPage() {
             const data = await res.json();
 
             if (res.ok && data.success && data.token) {
-                // Save token and refresh token
                 localStorage.setItem("token", data.token);
                 if (data.refreshToken) {
                     localStorage.setItem("refreshToken", data.refreshToken);
                 }
                 localStorage.setItem("role", data.role);
                 localStorage.setItem("username", data.username || data.studentId);
+                window.dispatchEvent(new Event("auth-change"));
 
-                if (data.role === 'admin') {
-                    router.push('/admin');
+                if (data.role === "admin") {
+                    router.push("/admin");
                 } else {
-                    router.push('/vote');
+                    router.push("/vote");
                 }
             } else {
-                // Handle validation errors or other errors
                 const errorMessage = data.error || (data.details && data.details.map((d: any) => d.msg).join(', ')) || "Login failed";
-                alert(errorMessage);
+                toast.error(errorMessage);
             }
         } catch (err) {
             console.error(err);
-            alert("Login Error");
+            toast.error("Login Error");
         } finally {
             setLoading(false);
         }

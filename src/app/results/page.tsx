@@ -2,9 +2,11 @@
 
 import React, { useEffect, useState } from "react";
 import { ethers } from "ethers";
+import toast from "react-hot-toast";
 import { useWallet } from "../../context/WalletContext";
-import VotingArtifact from "../../contracts/Voting.json";
-
+import VotingArtifact from "../../contracts/VotingSystem.json";
+import { getRpcErrorMessage } from "../../utils/rpcError";
+import io from "socket.io-client"; // Import Socket.io client
 
 interface Session {
     id: number;
@@ -18,6 +20,9 @@ interface Session {
 interface Candidate {
     id: number;
     name: string;
+    photoUrl: string;
+    vision: string;
+    mission: string;
     voteCount: number;
     percentage?: string;
 }
@@ -28,14 +33,24 @@ export default function ResultsPage() {
     const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [loading, setLoading] = useState(false);
+    const [refreshKey, setRefreshKey] = useState(0);
 
-    // Fetch Sessions on Load
+    // Refetch when user returns to tab so results update without reload
+    useEffect(() => {
+        const onVisible = () => {
+            if (document.visibilityState === "visible") setRefreshKey((k) => k + 1);
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => document.removeEventListener("visibilitychange", onVisible);
+    }, []);
+
+    // Fetch Sessions on Load (and when refreshKey changes)
     useEffect(() => {
         const fetchSessions = async () => {
             const readProvider = provider || new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
             try {
                 const contract = new ethers.Contract(
-                    process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS!,
+                    process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
                     VotingArtifact.abi,
                     readProvider
                 );
@@ -63,22 +78,25 @@ export default function ResultsPage() {
 
             } catch (err) {
                 console.error("Error fetching sessions:", err);
+                toast.error(getRpcErrorMessage(err));
             }
         };
 
         fetchSessions();
-    }, [provider]); // Run once on mount or provider change
+    }, [provider, refreshKey]);
 
-    // Fetch Results when Session Changes
+    // Fetch Results when Session Changes + Real-time Updates
     useEffect(() => {
         if (selectedSessionId === null) return;
 
         const fetchResults = async () => {
-            setLoading(true);
+            // Only set loading on initial fetch or major change, not every update to avoid flicker
+            if (candidates.length === 0) setLoading(true);
+
             const readProvider = provider || new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
             try {
                 const contract = new ethers.Contract(
-                    process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS!,
+                    process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
                     VotingArtifact.abi,
                     readProvider
                 );
@@ -93,6 +111,9 @@ export default function ResultsPage() {
                     return {
                         id: Number(c.id),
                         name: c.name,
+                        photoUrl: c.photoUrl,
+                        vision: c.vision,
+                        mission: c.mission,
                         voteCount: votes
                     };
                 });
@@ -109,16 +130,55 @@ export default function ResultsPage() {
                 setCandidates(candidatesWithStats);
             } catch (err) {
                 console.error("Error fetching results:", err);
+                toast.error(getRpcErrorMessage(err));
             } finally {
                 setLoading(false);
             }
         };
 
+        // Initial fetch
         fetchResults();
-        const interval = setInterval(fetchResults, 5000); // Poll every 5s
-        return () => clearInterval(interval);
 
-    }, [selectedSessionId, provider]);
+        // ---------------------------------------------------------
+        // REAL-TIME UPDATES VIA SOCKET.IO
+        // ---------------------------------------------------------
+        const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001");
+
+        socket.on("connect", () => {
+            console.log("🟢 Connected to Real-time Voting Updates");
+        });
+
+        // Listen for new votes
+        socket.on("vote_update", (data: any) => {
+            // Check if the update is for the current session
+            if (Number(data.sessionId) === selectedSessionId) {
+                console.log("🚀 New vote received, updating results...");
+                fetchResults();
+            }
+        });
+
+        // Listen for session status changes
+        socket.on("session_update", (data: any) => {
+            if (Number(data.sessionId) === selectedSessionId) {
+                console.log("🔄 Session status changed, refreshing...");
+                setRefreshKey(prev => prev + 1); // Trigger session list refresh
+            }
+        });
+
+        // Listen for new candidates
+        socket.on("candidate_added", (data: any) => {
+            if (Number(data.sessionId) === selectedSessionId) {
+                console.log("🆕 New candidate added, updating results...");
+                fetchResults();
+            }
+        });
+
+        // Cleanup on unmount or session change
+        return () => {
+            socket.disconnect();
+        };
+
+    }, [selectedSessionId, provider, refreshKey]);
 
 
     const getSessionStatus = (startTime: number, endTime: number, isActive: boolean) => {
@@ -133,7 +193,7 @@ export default function ResultsPage() {
         <div className="min-h-screen bg-dark-900 pt-20 px-4">
             <div className="max-w-6xl mx-auto">
                 <h1 className="text-3xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-blue-400">
-                    Election Results
+                    Election Results <span className="text-sm font-normal text-gray-500 ml-2">(Live Updates)</span>
                 </h1>
 
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -188,16 +248,27 @@ export default function ResultsPage() {
                                                 <div className="relative z-10 flex items-center justify-between">
                                                     <div className="flex items-center gap-4">
                                                         <div className={`
-                                                            w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg
+                                                            w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0
                                                             ${index === 0 ? 'bg-yellow-500/20 text-yellow-500' :
                                                                 index === 1 ? 'bg-gray-400/20 text-gray-400' :
                                                                     index === 2 ? 'bg-orange-500/20 text-orange-500' : 'bg-white/5 text-gray-600'}
                                                         `}>
                                                             {index + 1}
                                                         </div>
-                                                        <div>
-                                                            <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">{c.name}</h3>
-                                                            <p className="text-sm text-gray-400">{c.voteCount} Votes</p>
+
+                                                        <div className="flex items-center gap-4">
+                                                            {c.photoUrl && (
+                                                                <img
+                                                                    src={c.photoUrl}
+                                                                    alt={c.name}
+                                                                    className="w-12 h-12 rounded-full object-cover border border-white/10"
+                                                                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150'; }}
+                                                                />
+                                                            )}
+                                                            <div>
+                                                                <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">{c.name}</h3>
+                                                                <p className="text-sm text-gray-400">{c.voteCount} Votes</p>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <div className="text-right">

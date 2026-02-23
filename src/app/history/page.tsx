@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import { ethers, Contract } from "ethers";
+import toast from "react-hot-toast";
 import { useWallet } from "../../context/WalletContext";
-import VotingArtifact from "../../contracts/Voting.json";
+import VotingArtifact from "../../contracts/VotingSystem.json";
+import { getRpcErrorMessage } from "../../utils/rpcError";
 
 
 interface VoteRecord {
@@ -27,7 +29,7 @@ export default function HistoryPage() {
         try {
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS!,
+                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
                 VotingArtifact.abi,
                 signer
             );
@@ -62,12 +64,22 @@ export default function HistoryPage() {
 
         } catch (err) {
             console.error("Error fetching history:", err);
+            toast.error(getRpcErrorMessage(err));
         }
         setLoading(false);
     };
 
     useEffect(() => {
         if (isConnected) fetchHistory();
+    }, [isConnected, provider, account]);
+
+    // Refetch when user returns to tab so history updates without reload
+    useEffect(() => {
+        const onVisible = () => {
+            if (document.visibilityState === "visible" && isConnected) fetchHistory();
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => document.removeEventListener("visibilitychange", onVisible);
     }, [isConnected, provider, account]);
 
     if (!isConnected) return <div className="text-center pt-20">Please Connect Wallet</div>;
@@ -116,7 +128,7 @@ export default function HistoryPage() {
                                             <td className="px-6 py-4">
                                                 {record.txHash ? (
                                                     <a
-                                                        href={`https://amoy.polygonscan.com/tx/${record.txHash}`}
+                                                        href={`${process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL || "https://amoy.polygonscan.com"}/tx/${record.txHash}`}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="text-blue-400 hover:text-blue-300 text-sm font-mono"

@@ -9,15 +9,20 @@ const Navbar = () => {
     const [isAdmin, setIsAdmin] = React.useState(false);
     const [isLoggedIn, setIsLoggedIn] = React.useState(false);
 
-    React.useEffect(() => {
-        // Check if user is logged in and is admin
+    const syncAuthState = React.useCallback(() => {
         const token = localStorage.getItem("token");
         const username = localStorage.getItem("username");
         const role = localStorage.getItem("role");
-
         setIsLoggedIn(!!token && !!username);
-        setIsAdmin(role === 'admin');
+        setIsAdmin(role === "admin");
     }, []);
+
+    React.useEffect(() => {
+        syncAuthState();
+        const onAuthChange = () => syncAuthState();
+        window.addEventListener("auth-change", onAuthChange);
+        return () => window.removeEventListener("auth-change", onAuthChange);
+    }, [syncAuthState]);
 
     return (
         <nav className="fixed top-0 w-full z-50 glass-panel border-b border-white/10">
@@ -32,6 +37,9 @@ const Navbar = () => {
                         <div className="ml-10 flex items-baseline space-x-4">
                             <Link href="/" className="hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium transition">
                                 Home
+                            </Link>
+                            <Link href="/about" className="hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium transition">
+                                About
                             </Link>
                             {isAdmin && (
                                 <Link href="/admin" className="hover:text-purple-400 px-3 py-2 rounded-md text-sm font-medium transition text-purple-300">

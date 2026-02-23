@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useWallet } from "../../context/WalletContext";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 import { getValidToken, clearAuth, isMockToken, refreshAccessToken, isTokenExpired } from "../../utils/auth";
 
 export default function BindWallet() {
@@ -11,6 +12,7 @@ export default function BindWallet() {
     const [status, setStatus] = useState("");
     const [vc, setVc] = useState<any>(null);
     const [alreadyBound, setAlreadyBound] = useState<boolean>(false);
+    const [nftClaimed, setNftClaimed] = useState<boolean>(false);
     const router = useRouter();
 
     useEffect(() => {
@@ -42,15 +44,40 @@ export default function BindWallet() {
 
     const checkStatus = async () => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/did/status/${account}`);
+            const token = getValidToken();
+            if (!token) return;
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/did/status/${account}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.status === 401) {
+                clearAuth();
+                router.push("/login");
+                return;
+            }
             const data = await res.json();
             if (data.claimed) {
                 if (data.studentId === studentId) {
                     setAlreadyBound(true);
-                    setStatus("Wallet already bound to your Student ID.");
+
+                    if (data.nftClaimed) {
+                        setNftClaimed(true);
+                        setStatus("Wallet Bound and Student NFT Claimed.");
+                    } else {
+                        // If bound but not claimed, backend might return VC
+                        if (data.vc) {
+                            setVc(data);
+                            setStatus("Wallet Bound. Please claim your NFT.");
+                        } else {
+                            setStatus("Wallet already bound to your Student ID.");
+                        }
+                    }
                 } else {
                     setStatus(`Wallet already bound to ANOTHER Student ID: ${data.studentId}`);
                 }
+            } else {
+                setAlreadyBound(false);
+                setNftClaimed(false);
+                setVc(null);
             }
         } catch (error) {
             console.error(error);
@@ -58,7 +85,10 @@ export default function BindWallet() {
     };
 
     const bindWallet = async () => {
-        if (!account) return alert("Connect Wallet first");
+        if (!account) {
+            toast.error("Connect Wallet first");
+            return;
+        }
         if (!studentId) return;
 
         setStatus("Binding Wallet...");
@@ -223,9 +253,9 @@ export default function BindWallet() {
             }
 
             setStatus("Success! Student NFT Claimed.");
-            setTimeout(() => {
-                router.push('/vote');
-            }, 2000);
+            setNftClaimed(true);
+            setVc(null);
+            setTimeout(() => router.push("/vote"), 1000);
         } catch (err: any) {
             setStatus("Error: " + err.message);
             console.error("Register error:", err);
@@ -260,7 +290,7 @@ export default function BindWallet() {
                             {account}
                         </div>
 
-                        {!alreadyBound && !vc && (
+                        {!alreadyBound && !vc && !nftClaimed && (
                             <button
                                 onClick={bindWallet}
                                 className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition shadow-lg shadow-blue-600/20"
@@ -269,13 +299,19 @@ export default function BindWallet() {
                             </button>
                         )}
 
-                        {alreadyBound && !vc && (
+                        {nftClaimed && (
+                            <div className="p-4 bg-purple-500/20 text-purple-200 rounded-xl border border-purple-500/30">
+                                ✓ Student NFT Claimed
+                            </div>
+                        )}
+
+                        {alreadyBound && !vc && !nftClaimed && (
                             <div className="p-4 bg-green-500/20 text-green-200 rounded-xl border border-green-500/30">
                                 ✓ Wallet Bound
                             </div>
                         )}
 
-                        {vc && (
+                        {vc && !nftClaimed && (
                             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
                                 <div className="p-4 bg-green-500/20 text-green-200 rounded-xl border border-green-500/30">
                                     ✓ Wallet Bound Successfully
