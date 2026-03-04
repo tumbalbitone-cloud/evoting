@@ -311,6 +311,11 @@ export default function ResultsPage() {
             }
         });
 
+        socket.on("session_created", () => {
+            console.log("🚀 New session created, refreshing sessions list...");
+            setRefreshKey((prev) => prev + 1);
+        });
+
         return () => {
             socket.disconnect();
         };
