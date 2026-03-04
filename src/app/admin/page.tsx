@@ -8,7 +8,7 @@ import VotingArtifact from "../../contracts/VotingSystem.json";
 import { useRouter } from "next/navigation";
 import io from "socket.io-client"; // Import Socket.io
 import toast from "react-hot-toast";
-import { getValidToken } from "../../utils/auth";
+import { getValidToken, authenticatedFetch } from "../../utils/auth";
 import { getRpcErrorMessage } from "../../utils/rpcError";
 
 interface Session {
@@ -314,18 +314,10 @@ export default function AdminPage() {
         }
         setLoading(true);
         try {
-            const token = getValidToken();
-            if (!token) {
-                toast.error("Sesi habis. Silakan login lagi.");
-                router.push("/login");
-                setLoading(false);
-                return;
-            }
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/create`, {
+            const res = await authenticatedFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/create`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     name: newUserName,
@@ -582,16 +574,8 @@ export default function AdminPage() {
                                             formData.append('image', file);
                                             setLoading(true);
                                             try {
-                                                const token = getValidToken();
-                                                if (!token) {
-                                                    toast.error("Sesi habis. Silakan login lagi.");
-                                                    router.push("/login");
-                                                    setLoading(false);
-                                                    return;
-                                                }
-                                                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload`, {
+                                                const res = await authenticatedFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload`, {
                                                     method: 'POST',
-                                                    headers: { 'Authorization': `Bearer ${token}` },
                                                     body: formData
                                                 });
                                                 const data = await res.json();

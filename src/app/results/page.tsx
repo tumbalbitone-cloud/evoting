@@ -295,7 +295,24 @@ export default function ResultsPage() {
         socket.on("vote_update", (data: any) => {
             if (Number(data.sessionId) === selectedSessionId) {
                 console.log("🚀 New vote received, updating results...");
-                fetchResults();
+                setCandidates((prev) => {
+                    const candidateId = Number(data.candidateId);
+                    const newCandidates = prev.map(c =>
+                        c.id === candidateId ? { ...c, voteCount: c.voteCount + 1 } : c
+                    );
+                    const totalVotes = newCandidates.reduce((sum, c) => sum + c.voteCount, 0);
+                    const updatedCandidates = newCandidates.map(c => ({
+                        ...c,
+                        percentage: totalVotes === 0 ? "0.0" : ((c.voteCount / totalVotes) * 100).toFixed(1)
+                    }));
+                    updatedCandidates.sort((a, b) => b.voteCount - a.voteCount);
+                    return updatedCandidates;
+                });
+
+                // Fetch dari blockchain dengan sedikit delay (memberi waktu RPC node sync)
+                setTimeout(() => {
+                    setRefreshKey((prev) => prev + 1);
+                }, 2000);
             }
         });
 
