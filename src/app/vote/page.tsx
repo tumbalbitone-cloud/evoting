@@ -170,7 +170,11 @@ export default function VotePage() {
             console.log("🆕 New candidate added, refreshing...");
             // If looking at the session where candidate was added, refresh
             if (Number(data.sessionId) === selectedSessionId) {
-                setRefreshKey(prev => prev + 1);
+                // Beri jeda 2 detik agar Node RPC (seperti Sepolia/Amoy) tersinkronisasi
+                // terutama saat kandidat berubah dari kosong (0) ke 1 kandidat pertama.
+                setTimeout(() => {
+                    setRefreshKey(prev => prev + 1);
+                }, 2000);
             }
         });
 
@@ -269,8 +273,8 @@ export default function VotePage() {
                                         <p className="text-gray-400 mt-1 text-sm">{session.description}</p>
                                     </div>
                                     <span className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${getSessionStatus(session) === 'Active' ? 'bg-green-500/20 text-green-400' :
-                                            getSessionStatus(session) === 'Upcoming' ? 'bg-blue-500/20 text-blue-400' :
-                                                'bg-gray-700 text-gray-400'
+                                        getSessionStatus(session) === 'Upcoming' ? 'bg-blue-500/20 text-blue-400' :
+                                            'bg-gray-700 text-gray-400'
                                         }`}>
                                         {getSessionStatus(session)}
                                     </span>
