@@ -2,13 +2,16 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { ethers, Contract } from "ethers";
+import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import { useWallet } from "../../context/WalletContext";
 import { getRpcErrorMessage } from "../../utils/rpcError";
-import { authenticatedFetch } from "../../utils/auth";
 import VotingArtifact from "../../contracts/VotingSystem.json";
 import io from "socket.io-client"; // Import Socket.io
+
+const SESSION_ELIGIBILITY_ABI = [
+    "function isEligibleForSession(uint256 _sessionId, address _voter) view returns (bool)",
+] as const;
 
 
 interface Session {
@@ -36,23 +39,27 @@ export default function VotePage() {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasVotedInSession, setHasVotedInSession] = useState(false);
-    const [votingOpen, setVotingOpen] = useState(false); // Deprecated in new contract but used for visual check
+    const [isEligibleForSession, setIsEligibleForSession] = useState<boolean | null>(null);
 
     const [txHash, setTxHash] = useState<string | null>(null);
     const [chainId, setChainId] = useState<bigint | null>(null);
     const [hasNft, setHasNft] = useState<boolean | null>(null);
     const [refreshKey, setRefreshKey] = useState(0); // Trigger re-fetch
 
+    const getVotingContract = (runner: ethers.ContractRunner) => {
+        return new ethers.Contract(
+            process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
+            [...VotingArtifact.abi, ...SESSION_ELIGIBILITY_ABI],
+            runner
+        );
+    };
+
     // Initial fetch for all sessions
     const fetchSessions = async () => {
         if (!provider) return;
         try {
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
-                VotingArtifact.abi,
-                signer
-            );
+            const contract = getVotingContract(signer);
 
             // Fetch all sessions
             const sessionsRaw = await contract.getAllSessions();
@@ -81,13 +88,10 @@ export default function VotePage() {
     const fetchSessionDetails = async (sessionId: number) => {
         if (!provider || !account) return;
         setLoading(true);
+        setIsEligibleForSession(null);
         try {
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
-                VotingArtifact.abi,
-                signer
-            );
+            const contract = getVotingContract(signer);
 
             // Fetch Candidates for this session
             const candidatesRaw = await contract.getCandidates(sessionId);
@@ -108,9 +112,18 @@ export default function VotePage() {
             // Check if user has Student NFT (eligible to vote)
             const balance = await contract.balanceOf(account);
             setHasNft(Number(balance) > 0);
+
+            try {
+                const sessionEligible = await contract.isEligibleForSession(sessionId, account);
+                setIsEligibleForSession(sessionEligible);
+            } catch (eligibilityErr) {
+                console.warn("isEligibleForSession not available, fallback to open access:", eligibilityErr);
+                setIsEligibleForSession(true);
+            }
         } catch (err) {
             console.error(err);
             setHasNft(null);
+            setIsEligibleForSession(null);
             toast.error(getRpcErrorMessage(err));
         }
         setLoading(false);
@@ -199,17 +212,26 @@ export default function VotePage() {
         setTxHash(null);
         try {
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
-                VotingArtifact.abi,
-                signer
-            );
+            const contract = getVotingContract(signer);
 
             // Cek apakah user punya Student NFT (sudah bind & claim)
             const nftBalance = await contract.balanceOf(account);
             if (Number(nftBalance) === 0) {
                 setLoading(false);
                 toast.error(getEligibilityMessage() + " Buka: " + window.location.origin + "/bind-wallet", { duration: 6000 });
+                return;
+            }
+
+            let sessionEligible = true;
+            try {
+                sessionEligible = await contract.isEligibleForSession(selectedSessionId, account);
+            } catch (eligibilityErr) {
+                console.warn("isEligibleForSession not available, skip local eligibility pre-check:", eligibilityErr);
+            }
+            if (!sessionEligible) {
+                setLoading(false);
+                setIsEligibleForSession(false);
+                toast.error("Akun ini tidak terdaftar sebagai pemilih pada sesi yang dipilih.");
                 return;
             }
 
@@ -228,8 +250,12 @@ export default function VotePage() {
                 msg.includes("CALL EXCEPTION") ||
                 msg.includes("hold a Student NFT") ||
                 msg.includes("Student NFT");
+            const isSessionAllowlistError = msg.includes("not eligible for this session");
             if (isEligibilityError) {
                 toast.error(getEligibilityMessage() + " Buka: " + window.location.origin + "/bind-wallet", { duration: 6000 });
+            } else if (isSessionAllowlistError) {
+                setIsEligibleForSession(false);
+                toast.error("Akun ini tidak terdaftar sebagai pemilih pada sesi yang dipilih.");
             } else {
                 toast.error(getRpcErrorMessage(err));
             }
@@ -306,7 +332,11 @@ export default function VotePage() {
         <div className="min-h-screen bg-dark-900 pt-20 px-4">
             <div className="max-w-4xl mx-auto">
                 <button
-                    onClick={() => { setSelectedSessionId(null); setTxHash(null); }}
+                    onClick={() => {
+                        setSelectedSessionId(null);
+                        setTxHash(null);
+                        setIsEligibleForSession(null);
+                    }}
                     className="mb-6 text-gray-400 hover:text-white transition flex items-center gap-2"
                 >
                     &larr; Back to Sessions
@@ -327,6 +357,15 @@ export default function VotePage() {
                     </div>
                 )}
 
+                {hasNft !== false && isEligibleForSession === false && (
+                    <div className="text-center p-6 bg-rose-500/10 border border-rose-500/50 rounded-xl mb-8">
+                        <p className="text-rose-300 font-semibold mb-2">Akun ini tidak terdaftar pada sesi ini.</p>
+                        <p className="text-gray-400 text-sm">
+                            Hubungi admin agar akun/wallet Anda dimasukkan ke daftar pemilih sesi yang benar.
+                        </p>
+                    </div>
+                )}
+
                 {txHash && (
                     <div className="text-center p-6 bg-blue-500/10 border border-blue-500/50 rounded-xl mb-8 animate-fade-in">
                         <p className="text-blue-300 font-bold text-xl mb-2">Vote Submitted!</p>
@@ -344,6 +383,10 @@ export default function VotePage() {
                 {hasVotedInSession ? (
                     <div className="text-center p-6 bg-green-500/10 border border-green-500/50 rounded-xl mb-8">
                         <p className="text-green-300 font-bold text-xl">You have already voted in this session! 🎉</p>
+                    </div>
+                ) : isEligibleForSession === false ? (
+                    <div className="text-center p-6 bg-rose-500/10 border border-rose-500/50 rounded-xl mb-8">
+                        <p className="text-rose-300 font-bold">Anda tidak termasuk daftar pemilih sesi ini.</p>
                     </div>
                 ) : getSessionStatus(currentSession!) !== 'Active' ? (
                     <div className="text-center p-6 bg-yellow-500/10 border border-yellow-500/50 rounded-xl mb-8">
@@ -380,13 +423,19 @@ export default function VotePage() {
                             <div className="mt-auto w-full">
                                 <button
                                     onClick={() => castVote(c.id)}
-                                    disabled={hasVotedInSession || getSessionStatus(currentSession!) !== "Active" || loading || hasNft === false}
-                                    className={`w-full py-2.5 rounded-lg font-semibold transition text-sm ${hasVotedInSession || getSessionStatus(currentSession!) !== "Active" || hasNft === false
+                                    disabled={hasVotedInSession || getSessionStatus(currentSession!) !== "Active" || loading || hasNft === false || isEligibleForSession === false}
+                                    className={`w-full py-2.5 rounded-lg font-semibold transition text-sm ${hasVotedInSession || getSessionStatus(currentSession!) !== "Active" || hasNft === false || isEligibleForSession === false
                                         ? "bg-gray-700 text-gray-400 cursor-not-allowed"
                                         : "bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/25"
                                         }`}
                                 >
-                                    {loading ? "Memilih..." : hasNft === false ? "Bind & Claim NFT dulu" : "Pilih Kandidat Ini"}
+                                    {loading
+                                        ? "Memilih..."
+                                        : hasNft === false
+                                            ? "Bind & Claim NFT dulu"
+                                            : isEligibleForSession === false
+                                                ? "Tidak Terdaftar di Sesi Ini"
+                                                : "Pilih Kandidat Ini"}
                                 </button>
                             </div>
                         </div>

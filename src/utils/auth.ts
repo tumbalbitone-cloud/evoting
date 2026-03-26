@@ -2,6 +2,9 @@
  * Authentication utilities
  * Handles token management and validation
  */
+import { getApiBaseUrl } from "./api";
+
+const API_BASE_URL = getApiBaseUrl();
 
 /**
  * Check if token is a valid JWT format
@@ -70,7 +73,7 @@ export const refreshAccessToken = async (): Promise<string | null> => {
     }
 
     try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh`, {
+        const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -105,7 +108,17 @@ export const isTokenExpired = (token: string | null): boolean => {
 
     try {
         const parts = token.split('.');
-        const payload = JSON.parse(atob(parts[1]));
+        // JWT payload is base64url encoded (not plain base64)
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64.padEnd(base64.length + (4 - (base64.length % 4 || 4)) % 4, '=');
+
+        const decoded =
+            typeof globalThis.atob === 'function'
+                ? globalThis.atob(padded)
+                : Buffer.from(padded, 'base64').toString('utf-8');
+
+        const payload = JSON.parse(decoded);
         const exp = payload.exp;
 
         if (!exp) return true;

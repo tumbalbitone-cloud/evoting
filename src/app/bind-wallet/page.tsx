@@ -13,6 +13,7 @@ export default function BindWallet() {
     const [vc, setVc] = useState<any>(null);
     const [alreadyBound, setAlreadyBound] = useState<boolean>(false);
     const [nftClaimed, setNftClaimed] = useState<boolean>(false);
+    const [txHash, setTxHash] = useState<string | null>(null);
     const router = useRouter();
 
     useEffect(() => {
@@ -61,6 +62,7 @@ export default function BindWallet() {
 
                     if (data.nftClaimed) {
                         setNftClaimed(true);
+                        setTxHash(data.txHash || null);
                         setStatus("Wallet Bound and Student NFT Claimed.");
                     } else {
                         if (data.vc) {
@@ -234,6 +236,7 @@ export default function BindWallet() {
                         if (retryRes.ok) {
                             const retryData = await retryRes.json();
                             if (retryData.success) {
+                                setTxHash(retryData.txHash || null);
                                 setStatus("Success! Student NFT Claimed.");
                                 setTimeout(() => {
                                     router.push('/vote');
@@ -260,10 +263,11 @@ export default function BindWallet() {
                 throw new Error(data.error || "Failed to verify and register");
             }
 
+            setTxHash(data.txHash || null);
             setStatus("Success! Student NFT Claimed.");
             setNftClaimed(true);
             setVc(null);
-            setTimeout(() => router.push("/vote"), 1000);
+            setTimeout(() => router.push("/vote"), 4000);
         } catch (err: any) {
             setStatus("Error: " + err.message);
             console.error("Register error:", err);
@@ -308,8 +312,21 @@ export default function BindWallet() {
                         )}
 
                         {nftClaimed && (
-                            <div className="p-4 bg-purple-500/20 text-purple-200 rounded-xl border border-purple-500/30">
-                                ✓ Student NFT Claimed
+                            <div className="p-4 bg-purple-500/20 text-purple-200 rounded-xl border border-purple-500/30 space-y-2">
+                                <div className="font-semibold px-2 py-1">✓ Student NFT Claimed</div>
+                                {txHash && (
+                                    <div className="text-xs bg-black/40 p-2 rounded-lg border border-purple-500/20 font-mono flex flex-col items-center gap-1.5">
+                                        <span className="text-purple-300">Transaction Hash:</span>
+                                        <a
+                                            href={`${process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL}/tx/${txHash}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-400 hover:text-blue-300 underline break-all inline-block px-1"
+                                        >
+                                            {txHash}
+                                        </a>
+                                    </div>
+                                )}
                             </div>
                         )}
 

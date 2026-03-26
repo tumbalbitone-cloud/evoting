@@ -11,6 +11,13 @@ export default function ProfilePage() {
     const [username, setUsername] = useState<string | null>(null);
     const [role, setRole] = useState<string | null>(null);
     const [hasNft, setHasNft] = useState<boolean | null>(null);
+    const [showPasswordForm, setShowPasswordForm] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [passwordError, setPasswordError] = useState("");
+    const [passwordSuccess, setPasswordSuccess] = useState("");
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
     const { account, isConnected, connectWallet, disconnectWallet, provider } = useWallet();
     const router = useRouter();
 
@@ -57,6 +64,59 @@ export default function ProfilePage() {
         localStorage.removeItem("username");
         window.dispatchEvent(new Event("auth-change"));
         router.push("/");
+    };
+
+    const handleChangePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPasswordError("");
+        setPasswordSuccess("");
+
+        if (newPassword !== confirmPassword) {
+            setPasswordError("Password baru dan konfirmasi tidak cocok.");
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            setPasswordError("Password baru minimal 6 karakter.");
+            return;
+        }
+
+        setIsChangingPassword(true);
+        try {
+            const token = localStorage.getItem("token");
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+            const response = await fetch(`${apiUrl}/api/auth/change-password`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    currentPassword,
+                    newPassword
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                setPasswordSuccess("Password berhasil diperbarui!");
+                setCurrentPassword("");
+                setNewPassword("");
+                setConfirmPassword("");
+                setTimeout(() => {
+                    setShowPasswordForm(false);
+                    setPasswordSuccess("");
+                }, 3000);
+            } else {
+                setPasswordError(data.error || "Gagal memperbarui password");
+            }
+        } catch (error: any) {
+            setPasswordError(error.message || "Terjadi kesalahan server");
+        } finally {
+            setIsChangingPassword(false);
+        }
     };
 
     if (!username) return null;
@@ -174,6 +234,90 @@ export default function ProfilePage() {
                             </Link>
                         ))}
                     </div>
+                </div>
+
+                {/* Change Password Section */}
+                <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
+                    <div
+                        className="px-5 py-4 flex justify-between items-center cursor-pointer hover:bg-white/5 transition"
+                        onClick={() => setShowPasswordForm(!showPasswordForm)}
+                    >
+                        <h2 className="text-sm font-semibold text-gray-400 tracking-wider flex items-center gap-2">
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                            </svg>
+                            Ubah Password
+                        </h2>
+                        <svg
+                            className={`w-5 h-5 text-gray-400 transform transition-transform duration-200 ${showPasswordForm ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+
+                    {showPasswordForm && (
+                        <div className="p-5 border-t border-white/5 bg-black/20">
+                            <form onSubmit={handleChangePassword} className="space-y-4">
+                                {passwordError && (
+                                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                                        {passwordError}
+                                    </div>
+                                )}
+                                {passwordSuccess && (
+                                    <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm">
+                                        {passwordSuccess}
+                                    </div>
+                                )}
+
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-gray-400">Password Saat Ini</label>
+                                    <input
+                                        type="password"
+                                        value={currentPassword}
+                                        onChange={(e) => setCurrentPassword(e.target.value)}
+                                        className="w-full bg-dark-800/50 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all text-sm"
+                                        placeholder="Masukkan password saat ini"
+                                        required
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-gray-400">Password Baru</label>
+                                    <input
+                                        type="password"
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        className="w-full bg-dark-800/50 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all text-sm"
+                                        placeholder="Min. 6 karakter"
+                                        required
+                                        minLength={6}
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-gray-400">Konfirmasi Password Baru</label>
+                                    <input
+                                        type="password"
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        className="w-full bg-dark-800/50 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all text-sm"
+                                        placeholder="Ulangi password baru"
+                                        required
+                                        minLength={6}
+                                    />
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={isChangingPassword}
+                                    className="w-full py-2.5 mt-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition"
+                                >
+                                    {isChangingPassword ? "Memperbarui..." : "Simpan Password Baru"}
+                                </button>
+                            </form>
+                        </div>
+                    )}
                 </div>
 
                 {/* Logout */}

@@ -26,6 +26,10 @@ export const useWallet = () => useContext(WalletContext);
 export const WalletProvider = ({ children }: { children: ReactNode }) => {
     const [account, setAccount] = useState<string | null>(null);
     const [provider, setProvider] = useState<BrowserProvider | null>(null);
+    const targetChainId = BigInt(process.env.NEXT_PUBLIC_CHAIN_ID || "31337");
+    const targetChainHex = `0x${targetChainId.toString(16)}`;
+    const targetChainName = process.env.NEXT_PUBLIC_CHAIN_NAME || (targetChainId === 31337n ? "Hardhat Localhost" : "Custom Network");
+    const targetRpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545/";
 
     useEffect(() => {
         // Check if window.ethereum is available
@@ -44,17 +48,17 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
 
     const checkNetwork = async (provider: BrowserProvider) => {
         const network = await provider.getNetwork();
-        if (network.chainId !== 31337n) {
+        if (network.chainId !== targetChainId) {
             try {
-                await provider.send("wallet_switchEthereumChain", [{ chainId: "0x7a69" }]); // 31337 in hex
+                await provider.send("wallet_switchEthereumChain", [{ chainId: targetChainHex }]);
             } catch (switchError: any) {
                 if (switchError.code === 4902) {
                     try {
                         await provider.send("wallet_addEthereumChain", [
                             {
-                                chainId: "0x7a69",
-                                chainName: "Hardhat Localhost",
-                                rpcUrls: ["http://127.0.0.1:8545/"],
+                                chainId: targetChainHex,
+                                chainName: targetChainName,
+                                rpcUrls: [targetRpcUrl],
                                 nativeCurrency: {
                                     name: "ETH",
                                     symbol: "ETH",
