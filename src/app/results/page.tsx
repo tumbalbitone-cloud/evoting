@@ -8,6 +8,7 @@ import VotingArtifact from "../../contracts/VotingSystem.json";
 import { getRpcErrorMessage } from "../../utils/rpcError";
 import io from "socket.io-client";
 import { getValidImageUrl } from "../../utils/image";
+import { getApiBaseUrl } from "../../utils/api";
 import {
     PieChart,
     Pie,
@@ -285,9 +286,7 @@ export default function ResultsPage() {
 
     // ── Real-time updates via Socket.io ────────────────────────────────────
     useEffect(() => {
-        const socket = io(
-            process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-        );
+        const socket = io(getApiBaseUrl());
 
         socket.on("connect", () => {
             console.log("🟢 Connected to Real-time Voting Updates");

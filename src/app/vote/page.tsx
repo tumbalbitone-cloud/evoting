@@ -9,6 +9,7 @@ import { getRpcErrorMessage } from "../../utils/rpcError";
 import VotingArtifact from "../../contracts/VotingSystem.json";
 import io from "socket.io-client"; // Import Socket.io
 import { getValidImageUrl } from "../../utils/image";
+import { getApiBaseUrl } from "../../utils/api";
 
 const SESSION_ELIGIBILITY_ABI = [
     "function isEligibleForSession(uint256 _sessionId, address _voter) view returns (bool)",
@@ -154,7 +155,7 @@ export default function VotePage() {
     // REAL-TIME UPDATES VIA SOCKET.IO
     // ---------------------------------------------------------
     useEffect(() => {
-        const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001");
+        const socket = io(getApiBaseUrl());
 
         socket.on("connect", () => {
             console.log("🟢 Terhubung ke pembaruan voting real-time");

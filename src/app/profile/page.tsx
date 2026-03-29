@@ -6,6 +6,7 @@ import { useWallet } from "../../context/WalletContext";
 import { ethers } from "ethers";
 import VotingArtifact from "../../contracts/VotingSystem.json";
 import Link from "next/link";
+import { getApiBaseUrl } from "../../utils/api";
 
 export default function ProfilePage() {
     const [username, setUsername] = useState<string | null>(null);
@@ -84,7 +85,7 @@ export default function ProfilePage() {
         setIsChangingPassword(true);
         try {
             const token = localStorage.getItem("token");
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const apiUrl = getApiBaseUrl();
 
             const response = await fetch(`${apiUrl}/api/auth/change-password`, {
                 method: "PUT",

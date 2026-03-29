@@ -11,6 +11,7 @@ import toast from "react-hot-toast";
 import { authenticatedFetch } from "../../utils/auth";
 import { getRpcErrorMessage } from "../../utils/rpcError";
 import { getValidImageUrl } from "../../utils/image";
+import { getApiBaseUrl } from "../../utils/api";
 
 const SESSION_ALLOWLIST_ABI = [
     "function getSessionAllowedVoters(uint256 _sessionId) view returns (address[] memory)",
@@ -184,7 +185,7 @@ export default function AdminPage() {
     // REAL-TIME UPDATES VIA SOCKET.IO
     // ---------------------------------------------------------
     useEffect(() => {
-        const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001");
+        const socket = io(getApiBaseUrl());
 
         socket.on("connect", () => {
             console.log("🟢 Admin terhubung ke pembaruan real-time");
@@ -237,7 +238,7 @@ export default function AdminPage() {
             if (keyword.trim()) params.set("q", keyword.trim());
 
             const response = await authenticatedFetch(
-                `${process.env.NEXT_PUBLIC_API_URL}/api/users/list?${params.toString()}`,
+                `${getApiBaseUrl()}/api/users/list?${params.toString()}`,
                 { method: "GET" }
             );
             const payload = await response.json();
@@ -291,7 +292,7 @@ export default function AdminPage() {
 
         let unresolved: UnresolvedVoter[] = [];
         if (studentIds.length > 0) {
-            const response = await authenticatedFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/resolve-voter-addresses`, {
+            const response = await authenticatedFetch(`${getApiBaseUrl()}/api/users/resolve-voter-addresses`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -563,7 +564,7 @@ export default function AdminPage() {
         }
         setLoading(true);
         try {
-            const res = await authenticatedFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/create`, {
+            const res = await authenticatedFetch(`${getApiBaseUrl()}/api/users/create`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -611,7 +612,7 @@ export default function AdminPage() {
             const formData = new FormData();
             formData.append("file", bulkImportFile);
 
-            const res = await authenticatedFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/bulk-import`, {
+            const res = await authenticatedFetch(`${getApiBaseUrl()}/api/users/bulk-import`, {
                 method: "POST",
                 body: formData
             });
@@ -916,7 +917,7 @@ export default function AdminPage() {
                                                         formData.append('image', file);
                                                         setLoading(true);
                                                         try {
-                                                            const res = await authenticatedFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload`, {
+                                                            const res = await authenticatedFetch(`${getApiBaseUrl()}/api/upload`, {
                                                                 method: 'POST',
                                                                 body: formData
                                                             });

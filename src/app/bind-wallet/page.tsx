@@ -5,6 +5,7 @@ import { useWallet } from "../../context/WalletContext";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { getValidToken, clearAuth, isMockToken, refreshAccessToken, isTokenExpired, authenticatedFetch } from "../../utils/auth";
+import { getApiBaseUrl } from "../../utils/api";
 
 export default function BindWallet() {
     const { account, isConnected, connectWallet, walletBlocked, walletBlockedMessage, isConnecting } = useWallet();
@@ -48,7 +49,7 @@ export default function BindWallet() {
         try {
             // authenticatedFetch handles token expiry + auto-refresh automatically
             const res = await authenticatedFetch(
-                `${process.env.NEXT_PUBLIC_API_URL}/api/did/status/${account}`
+                `${getApiBaseUrl()}/api/did/status/${account}`
             );
             if (res.status === 401) {
                 // Refresh juga gagal — perlu login ulang
@@ -133,7 +134,7 @@ export default function BindWallet() {
                 return;
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/did/bind`, {
+            const res = await fetch(`${getApiBaseUrl()}/api/did/bind`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -200,7 +201,7 @@ export default function BindWallet() {
                 throw new Error("JWT Verifiable Credential tidak ditemukan. Silakan tautkan wallet lagi.");
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/did/verify-and-register`, {
+            const res = await fetch(`${getApiBaseUrl()}/api/did/verify-and-register`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -230,7 +231,7 @@ export default function BindWallet() {
                     if (newToken) {
                         // Retry request with new token
                         setStatus("Mencoba ulang dengan token terbaru...");
-                        const retryRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/did/verify-and-register`, {
+                        const retryRes = await fetch(`${getApiBaseUrl()}/api/did/verify-and-register`, {
                             method: "POST",
                             headers: {
                                 "Content-Type": "application/json",
