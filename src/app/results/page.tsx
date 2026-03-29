@@ -534,7 +534,7 @@ export default function ResultsPage() {
                                                             {/* Photo */}
                                                             {c.photoUrl && (
                                                                 <img
-                                                                    src={c.photoUrl}
+                                                                    src={c.photoUrl.replace(/localhost|127\.0\.0\.1/, window.location.hostname)}
                                                                     alt={c.name}
                                                                     className="w-11 h-11 rounded-full object-cover border border-white/10 shrink-0"
                                                                     onError={(e) => {

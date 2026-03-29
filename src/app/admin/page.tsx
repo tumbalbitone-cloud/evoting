@@ -952,7 +952,7 @@ export default function AdminPage() {
                                         ) : (
                                             <div className="flex items-center justify-between mt-2 p-3 bg-white/5 rounded-lg border border-gray-700">
                                                 <div className="flex items-center gap-3 overflow-hidden">
-                                                    <img src={candidatePhotoUrl} alt="Preview" className="w-14 h-14 object-cover rounded-lg border border-gray-600 flex-shrink-0" />
+                                                    <img src={candidatePhotoUrl.replace(/localhost|127\.0\.0\.1/, window.location.hostname)} alt="Preview" className="w-14 h-14 object-cover rounded-lg border border-gray-600 flex-shrink-0" />
                                                     <p className="text-gray-400 text-xs truncate">Foto Kandidat Terpilih</p>
                                                 </div>
                                                 <button

@@ -403,7 +403,7 @@ export default function VotePage() {
                         <div key={c.id} className="glass-panel p-5 rounded-xl hover:bg-white/5 transition flex flex-col items-center">
                             {c.photoUrl ? (
                                 <img
-                                    src={c.photoUrl}
+                                    src={c.photoUrl.replace(/localhost|127\.0\.0\.1/, window.location.hostname)}
                                     alt={c.name}
                                     className="w-24 h-24 rounded-full mb-4 object-cover border-2 border-blue-500"
                                     onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150'; }}
