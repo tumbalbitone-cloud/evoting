@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useWallet } from "../context/WalletContext";
 
 const Navbar = () => {
-    const { account, connectWallet, isConnected } = useWallet();
+    const { account, connectWallet, isConnected, walletBlocked } = useWallet();
     const [isAdmin, setIsAdmin] = React.useState(false);
     const [isLoggedIn, setIsLoggedIn] = React.useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
@@ -69,9 +69,10 @@ const Navbar = () => {
                             <>
                                 <button
                                     onClick={connectWallet}
+                                    disabled={walletBlocked}
                                     className={`px-4 py-2 rounded-full font-semibold transition-all duration-300 text-sm whitespace-nowrap ${isConnected
                                         ? "bg-green-500/10 text-green-400 border border-green-500/30"
-                                        : "bg-blue-600/20 text-blue-300 hover:bg-blue-600/30"
+                                        : "bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                         }`}
                                 >
                                     {isConnected ? `${account?.slice(0, 6)}...${account?.slice(-4)}` : "Hubungkan Wallet"}
@@ -142,9 +143,10 @@ const Navbar = () => {
                             {isLoggedIn ? (
                                 <button
                                     onClick={() => { connectWallet(); closeMobileMenu(); }}
+                                    disabled={walletBlocked}
                                     className={`w-full text-left px-4 py-3 rounded-lg text-sm font-semibold transition-all ${isConnected
                                         ? "bg-green-500/10 text-green-400 border border-green-500/20"
-                                        : "bg-blue-600/20 text-blue-300 hover:bg-blue-600/30"
+                                        : "bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                         }`}
                                 >
                                     {isConnected

@@ -18,7 +18,7 @@ export default function ProfilePage() {
     const [passwordError, setPasswordError] = useState("");
     const [passwordSuccess, setPasswordSuccess] = useState("");
     const [isChangingPassword, setIsChangingPassword] = useState(false);
-    const { account, isConnected, connectWallet, disconnectWallet, provider } = useWallet();
+    const { account, isConnected, connectWallet, disconnectWallet, provider, walletBlocked, walletBlockedMessage, isConnecting } = useWallet();
     const router = useRouter();
 
     useEffect(() => {
@@ -209,10 +209,16 @@ export default function ProfilePage() {
                                 </div>
                                 <button
                                     onClick={connectWallet}
-                                    className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition text-sm"
+                                    disabled={walletBlocked || isConnecting}
+                                    className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold transition text-sm"
                                 >
-                                    Hubungkan Wallet
+                                    {isConnecting ? "Menghubungkan..." : "Hubungkan Wallet"}
                                 </button>
+                                {walletBlockedMessage && (
+                                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                                        {walletBlockedMessage}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

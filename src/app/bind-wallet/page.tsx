@@ -7,11 +7,12 @@ import toast from "react-hot-toast";
 import { getValidToken, clearAuth, isMockToken, refreshAccessToken, isTokenExpired, authenticatedFetch } from "../../utils/auth";
 
 export default function BindWallet() {
-    const { account, isConnected, connectWallet } = useWallet();
+    const { account, isConnected, connectWallet, walletBlocked, walletBlockedMessage, isConnecting } = useWallet();
     const [studentId, setStudentId] = useState<string | null>(null);
     const [status, setStatus] = useState("");
     const [vc, setVc] = useState<any>(null);
     const [alreadyBound, setAlreadyBound] = useState<boolean>(false);
+    const [usedByOther, setUsedByOther] = useState<boolean>(false);
     const [nftClaimed, setNftClaimed] = useState<boolean>(false);
     const [txHash, setTxHash] = useState<string | null>(null);
     const router = useRouter();
@@ -59,6 +60,7 @@ export default function BindWallet() {
             if (data.claimed) {
                 if (data.studentId === studentId) {
                     setAlreadyBound(true);
+                    setUsedByOther(false);
 
                     if (data.nftClaimed) {
                         setNftClaimed(true);
@@ -74,9 +76,12 @@ export default function BindWallet() {
                     }
                 } else {
                     setStatus(`Wallet sudah tertaut ke NIM lain: ${data.studentId}`);
+                    setAlreadyBound(false);
+                    setUsedByOther(true);
                 }
             } else {
                 setAlreadyBound(false);
+                setUsedByOther(false);
                 setNftClaimed(false);
                 setVc(null);
             }
@@ -97,6 +102,10 @@ export default function BindWallet() {
     const bindWallet = async () => {
         if (!account) {
             toast.error("Hubungkan wallet terlebih dahulu");
+            return;
+        }
+        if (usedByOther || walletBlocked) {
+            toast.error("Wallet tersebut sudah digunakan oleh akun lain.");
             return;
         }
         if (!studentId) return;
@@ -291,10 +300,16 @@ export default function BindWallet() {
                         <p className="text-white/60">Hubungkan wallet Ethereum Anda untuk ditautkan ke akun mahasiswa.</p>
                         <button
                             onClick={connectWallet}
-                            className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold transition"
+                            disabled={walletBlocked || isConnecting}
+                            className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold transition"
                         >
-                            Hubungkan Wallet
+                            {isConnecting ? "Menghubungkan..." : "Hubungkan Wallet"}
                         </button>
+                        {(walletBlockedMessage || status.includes("Wallet sudah tertaut ke NIM lain")) && (
+                            <div className="p-3 rounded-lg text-sm bg-red-500/20 text-red-200 border border-red-500/30">
+                                {walletBlockedMessage || status}
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div className="space-y-4">
@@ -302,13 +317,18 @@ export default function BindWallet() {
                             {account}
                         </div>
 
-                        {!alreadyBound && !vc && !nftClaimed && (
+                        {!alreadyBound && !vc && !nftClaimed && !usedByOther && !walletBlocked && (
                             <button
                                 onClick={bindWallet}
                                 className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition shadow-lg shadow-blue-600/20"
                             >
                                 Tautkan Wallet ke Akun
                             </button>
+                        )}
+                        {(usedByOther || walletBlocked) && (
+                            <div className="p-4 bg-red-500/20 text-red-200 rounded-xl border border-red-500/30">
+                                {walletBlockedMessage || status || "Wallet tersebut sudah digunakan oleh akun lain."}
+                            </div>
                         )}
 
                         {nftClaimed && (

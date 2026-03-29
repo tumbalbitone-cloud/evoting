@@ -163,7 +163,7 @@ export default function HistoryPage() {
                                                 <td className="px-5 py-4">
                                                     {record.txHash ? (
                                                         <a
-                                                            href={`${process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL || "https://amoy.polygonscan.com"}/tx/${record.txHash}`}
+                                                            href={`${process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL}/tx/${record.txHash}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="text-blue-400 hover:text-blue-300 text-sm font-mono"

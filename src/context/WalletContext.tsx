@@ -11,6 +11,9 @@ interface WalletContextType {
     disconnectWallet: () => void;
     isConnected: boolean;
     provider: BrowserProvider | null;
+    isConnecting: boolean;
+    walletBlocked: boolean;
+    walletBlockedMessage: string | null;
 }
 
 const WalletContext = createContext<WalletContextType>({
@@ -19,6 +22,9 @@ const WalletContext = createContext<WalletContextType>({
     disconnectWallet: () => { },
     isConnected: false,
     provider: null,
+    isConnecting: false,
+    walletBlocked: false,
+    walletBlockedMessage: null,
 });
 
 export const useWallet = () => useContext(WalletContext);
@@ -26,6 +32,9 @@ export const useWallet = () => useContext(WalletContext);
 export const WalletProvider = ({ children }: { children: ReactNode }) => {
     const [account, setAccount] = useState<string | null>(null);
     const [provider, setProvider] = useState<BrowserProvider | null>(null);
+    const [isConnecting, setIsConnecting] = useState(false);
+    const [walletBlocked, setWalletBlocked] = useState(false);
+    const [walletBlockedMessage, setWalletBlockedMessage] = useState<string | null>(null);
     const targetChainId = BigInt(process.env.NEXT_PUBLIC_CHAIN_ID || "31337");
     const targetChainHex = `0x${targetChainId.toString(16)}`;
     const targetChainName = process.env.NEXT_PUBLIC_CHAIN_NAME || (targetChainId === 31337n ? "Hardhat Localhost" : "Custom Network");
@@ -72,6 +81,61 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         }
     }, [targetBlockExplorerUrl, targetChainHex, targetChainId, targetChainName, targetRpcUrl]);
 
+    const evaluateWalletOwnership = useCallback(async (address: string) => {
+        // If user isn't logged in, we can't verify "used by other account" safely.
+        // Allow wallet connection but don't block.
+        if (typeof window === "undefined") return true;
+
+        const token = localStorage.getItem("token");
+        const currentStudentId = localStorage.getItem("username");
+        if (!token || !currentStudentId) {
+            setWalletBlocked(false);
+            setWalletBlockedMessage(null);
+            return true;
+        }
+
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+            if (!apiUrl) {
+                setWalletBlocked(false);
+                setWalletBlockedMessage(null);
+                return true;
+            }
+
+            const res = await fetch(`${apiUrl}/api/did/status/${address}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                // If status can't be checked, don't block connection.
+                setWalletBlocked(false);
+                setWalletBlockedMessage(null);
+                return true;
+            }
+
+            const data = await res.json();
+            const usedByOther =
+                !!data?.claimed &&
+                !!data?.studentId &&
+                String(data.studentId) !== String(currentStudentId);
+
+            if (usedByOther) {
+                const msg = `Wallet tersebut sudah digunakan (tertaut ke NIM lain: ${data.studentId}). Silakan ganti akun wallet.`;
+                setWalletBlocked(true);
+                setWalletBlockedMessage(msg);
+                return false;
+            }
+
+            setWalletBlocked(false);
+            setWalletBlockedMessage(null);
+            return true;
+        } catch (err) {
+            console.warn("Could not verify wallet ownership:", err);
+            setWalletBlocked(false);
+            setWalletBlockedMessage(null);
+            return true;
+        }
+    }, []);
+
     useEffect(() => {
         const injectedProvider = getInjectedProvider();
         if (!injectedProvider) return;
@@ -94,7 +158,18 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         };
 
         const handleAccountsChanged = (accounts: string[]) => {
-            setAccount(accounts[0] || null);
+            const next = accounts[0] || null;
+            if (!next) {
+                setAccount(null);
+                setWalletBlocked(false);
+                setWalletBlockedMessage(null);
+                return;
+            }
+            // Re-evaluate when user switches accounts in MetaMask.
+            evaluateWalletOwnership(next).then((ok) => {
+                setAccount(ok ? next : null);
+                if (!ok) toast.error(`Wallet tersebut sudah digunakan. Silakan ganti akun wallet.`);
+            });
         };
 
         const handleChainChanged = async () => {
@@ -105,7 +180,9 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                 const accounts = await nextProvider.send("eth_accounts", []);
                 if (accounts.length > 0) {
                     await checkNetwork(nextProvider);
-                    setAccount(accounts[0]);
+                    const ok = await evaluateWalletOwnership(accounts[0]);
+                    setAccount(ok ? accounts[0] : null);
+                    if (!ok) toast.error(`Wallet tersebut sudah digunakan. Silakan ganti akun wallet.`);
                 } else {
                     setAccount(null);
                 }
@@ -131,21 +208,42 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
             return;
         }
         try {
+            setIsConnecting(true);
             const accounts = await provider.send("eth_requestAccounts", []);
             await checkNetwork(provider);
-            setAccount(accounts[0]);
+            const next = accounts[0];
+            const ok = await evaluateWalletOwnership(next);
+            if (!ok) {
+                setAccount(null);
+                toast.error("Wallet tersebut sudah digunakan oleh akun lain.");
+                return;
+            }
+            setAccount(next);
         } catch (error) {
             console.error("Koneksi ditolak", error);
             toast.error(getRpcErrorMessage(error));
+        } finally {
+            setIsConnecting(false);
         }
     };
 
     const disconnectWallet = () => {
         setAccount(null);
+        setWalletBlocked(false);
+        setWalletBlockedMessage(null);
     };
 
     return (
-        <WalletContext.Provider value={{ account, connectWallet, disconnectWallet, isConnected: !!account, provider }}>
+        <WalletContext.Provider value={{
+            account,
+            connectWallet,
+            disconnectWallet,
+            isConnected: !!account,
+            provider,
+            isConnecting,
+            walletBlocked,
+            walletBlockedMessage
+        }}>
             {children}
         </WalletContext.Provider>
     );
