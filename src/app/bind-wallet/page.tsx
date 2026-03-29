@@ -57,6 +57,14 @@ export default function BindWallet() {
                 router.push("/login");
                 return;
             }
+            if (res.status === 403) {
+                setStatus("Wallet sudah tertaut ke akun lain.");
+                setAlreadyBound(false);
+                setUsedByOther(true);
+                setNftClaimed(false);
+                setVc(null);
+                return;
+            }
             const data = await res.json();
             if (data.claimed) {
                 if (data.studentId === studentId) {

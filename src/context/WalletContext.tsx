@@ -102,7 +102,16 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                 headers: { Authorization: `Bearer ${token}` },
             });
             if (!res.ok) {
-                // If status can't be checked, don't block connection.
+                // Backend deliberately returns 403 when a non-admin tries to check an address
+                // bound to another studentId. Treat it as "wallet already used".
+                if (res.status === 403) {
+                    const msg = "Wallet tersebut sudah digunakan (tertaut ke akun lain). Silakan ganti akun wallet.";
+                    setWalletBlocked(true);
+                    setWalletBlockedMessage(msg);
+                    return false;
+                }
+
+                // If status can't be checked (network/500/etc), don't block connection.
                 setWalletBlocked(false);
                 setWalletBlockedMessage(null);
                 return true;
