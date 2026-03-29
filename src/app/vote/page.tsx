@@ -8,6 +8,7 @@ import { useWallet } from "../../context/WalletContext";
 import { getRpcErrorMessage } from "../../utils/rpcError";
 import VotingArtifact from "../../contracts/VotingSystem.json";
 import io from "socket.io-client"; // Import Socket.io
+import { getValidImageUrl } from "../../utils/image";
 
 const SESSION_ELIGIBILITY_ABI = [
     "function isEligibleForSession(uint256 _sessionId, address _voter) view returns (bool)",
@@ -403,7 +404,7 @@ export default function VotePage() {
                         <div key={c.id} className="glass-panel p-5 rounded-xl hover:bg-white/5 transition flex flex-col items-center">
                             {c.photoUrl ? (
                                 <img
-                                    src={c.photoUrl.replace(/^http:\/\/(localhost|127\.0\.0\.1):\d+/, '')}
+                                    src={getValidImageUrl(c.photoUrl)}
                                     alt={c.name}
                                     className="w-24 h-24 rounded-full mb-4 object-cover border-2 border-blue-500"
                                     onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150'; }}

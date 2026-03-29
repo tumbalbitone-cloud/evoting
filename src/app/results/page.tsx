@@ -7,6 +7,7 @@ import { useWallet } from "../../context/WalletContext";
 import VotingArtifact from "../../contracts/VotingSystem.json";
 import { getRpcErrorMessage } from "../../utils/rpcError";
 import io from "socket.io-client";
+import { getValidImageUrl } from "../../utils/image";
 import {
     PieChart,
     Pie,
@@ -534,7 +535,7 @@ export default function ResultsPage() {
                                                             {/* Photo */}
                                                             {c.photoUrl && (
                                                                 <img
-                                                                    src={c.photoUrl.replace(/^http:\/\/(localhost|127\.0\.0\.1):\d+/, '')}
+                                                                    src={getValidImageUrl(c.photoUrl)}
                                                                     alt={c.name}
                                                                     className="w-11 h-11 rounded-full object-cover border border-white/10 shrink-0"
                                                                     onError={(e) => {

@@ -10,6 +10,7 @@ import io from "socket.io-client"; // Import Socket.io
 import toast from "react-hot-toast";
 import { authenticatedFetch } from "../../utils/auth";
 import { getRpcErrorMessage } from "../../utils/rpcError";
+import { getValidImageUrl } from "../../utils/image";
 
 const SESSION_ALLOWLIST_ABI = [
     "function getSessionAllowedVoters(uint256 _sessionId) view returns (address[] memory)",
@@ -952,7 +953,7 @@ export default function AdminPage() {
                                         ) : (
                                             <div className="flex items-center justify-between mt-2 p-3 bg-white/5 rounded-lg border border-gray-700">
                                                 <div className="flex items-center gap-3 overflow-hidden">
-                                                    <img src={candidatePhotoUrl.replace(/^http:\/\/(localhost|127\.0\.0\.1):\d+/, '')} alt="Preview" className="w-14 h-14 object-cover rounded-lg border border-gray-600 flex-shrink-0" />
+                                                    <img src={getValidImageUrl(candidatePhotoUrl)} alt="Preview" className="w-14 h-14 object-cover rounded-lg border border-gray-600 flex-shrink-0" />
                                                     <p className="text-gray-400 text-xs truncate">Foto Kandidat Terpilih</p>
                                                 </div>
                                                 <button
