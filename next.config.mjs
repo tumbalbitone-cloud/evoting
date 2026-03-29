@@ -5,6 +5,14 @@ const nextConfig = {
     allowedDevOrigins: [
         'http://localhost:3000',
     ],
+    async rewrites() {
+        return [
+            {
+                source: '/uploads/:path*',
+                destination: 'http://localhost:3001/uploads/:path*',
+            },
+        ];
+    },
 };
 
 export default nextConfig;
