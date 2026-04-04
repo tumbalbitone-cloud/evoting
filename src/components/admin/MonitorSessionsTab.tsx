@@ -68,17 +68,19 @@ export function MonitorSessionsTab({
                                     </td>
                                     <td className="p-3">
                                         <div className="flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => onToggleSessionStatus(session.id, session.isActive)}
-                                                className={`px-3 py-1.5 rounded text-xs font-bold transition whitespace-nowrap ${
-                                                    session.isActive
-                                                        ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                                                        : "bg-green-500/20 text-green-400 hover:bg-green-500/30"
-                                                }`}
-                                            >
-                                                {session.isActive ? "STOP" : "START"}
-                                            </button>
+                                            {getAdminSessionStatus(session) !== "BERAKHIR" && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onToggleSessionStatus(session.id, session.isActive)}
+                                                    className={`px-3 py-1.5 rounded text-xs font-bold transition whitespace-nowrap ${
+                                                        session.isActive
+                                                            ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                                                            : "bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                                                    }`}
+                                                >
+                                                    {session.isActive ? "STOP" : "START"}
+                                                </button>
+                                            )}
                                             <button
                                                 type="button"
                                                 onClick={() => onFetchSessionStats(session.id)}
@@ -125,17 +127,19 @@ export function MonitorSessionsTab({
                                 <div>⏹ Akhir: {formatTime(session.endTime)}</div>
                             </div>
                             <div className="flex gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => onToggleSessionStatus(session.id, session.isActive)}
-                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${
-                                        session.isActive
-                                            ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/20"
-                                            : "bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/20"
-                                    }`}
-                                >
-                                    {session.isActive ? "⏹ Hentikan" : "▶ Aktifkan"}
-                                </button>
+                                {getAdminSessionStatus(session) !== "BERAKHIR" && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onToggleSessionStatus(session.id, session.isActive)}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${
+                                            session.isActive
+                                                ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/20"
+                                                : "bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/20"
+                                        }`}
+                                    >
+                                        {session.isActive ? "⏹ Hentikan" : "▶ Aktifkan"}
+                                    </button>
+                                )}
                                 <button
                                     type="button"
                                     onClick={() => onFetchSessionStats(session.id)}
