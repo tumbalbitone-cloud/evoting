@@ -58,3 +58,4 @@ Kode frontend juga masih menerima fallback `NEXT_PUBLIC_API_URI`, tetapi variabe
 - `/profile` profil user.
 - `/admin` dashboard admin.
 # evoting
+# evoting
