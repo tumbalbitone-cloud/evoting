@@ -45,7 +45,7 @@ export default function AdminPage() {
     const [candidateVision, setCandidateVision] = useState("");
     const [candidateMission, setCandidateMission] = useState("");
     const [targetSessionId, setTargetSessionId] = useState(1);
-    const [allowlistSessionId, setAllowlistSessionId] = useState(1);
+    const [allowlistSessionId, setAllowlistSessionId] = useState(0);
     const [draftAllowlist, setDraftAllowlist] = useState<{ value: string; label: string }[]>([]);
     const [allowlistAddresses, setAllowlistAddresses] = useState<string[]>([]);
     const [isStudentPickerOpen, setIsStudentPickerOpen] = useState(false);
@@ -259,12 +259,14 @@ export default function AdminPage() {
 
     useEffect(() => {
         if (sessions.length === 0) return;
-        if (!sessions.some((s) => s.id === allowlistSessionId)) {
+        // If current ID is 0 (initial sentinel) or no longer valid, pick the last session
+        if (allowlistSessionId === 0 || !sessions.some((s) => s.id === allowlistSessionId)) {
             setAllowlistSessionId(sessions[sessions.length - 1].id);
         }
     }, [sessions, allowlistSessionId]);
 
     useEffect(() => {
+        // allowlistSessionId === 0 means sessions haven't loaded yet — skip
         if (allowlistSessionId <= 0) return;
         fetchSessionAllowlist(allowlistSessionId);
     }, [allowlistSessionId, refreshKey, fetchSessionAllowlist]);
