@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { ethers } from "ethers";
 import toast from "react-hot-toast";
@@ -9,11 +10,14 @@ import { getRpcErrorMessage } from "../../utils/rpcError";
 import VotingArtifact from "../../contracts/VotingSystem.json";
 import io from "socket.io-client"; // Import Socket.io
 import { getValidImageUrl } from "../../utils/image";
-import { getApiBaseUrl } from "../../utils/api";
+import { getApiBaseUrl, publicApiFetch } from "../../utils/api";
 
 const SESSION_ELIGIBILITY_ABI = [
     "function isEligibleForSession(uint256 _sessionId, address _voter) view returns (bool)",
 ] as const;
+
+const FALLBACK_CANDIDATE_IMAGE =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Crect width='160' height='160' rx='80' fill='%23111827'/%3E%3Ccircle cx='80' cy='62' r='28' fill='%233b82f6' fill-opacity='0.85'/%3E%3Cpath d='M38 130c8-23 29-36 42-36s34 13 42 36' fill='%233b82f6' fill-opacity='0.55'/%3E%3C/svg%3E";
 
 
 interface Session {
@@ -58,7 +62,7 @@ export default function VotePage() {
     };
 
     // Initial fetch for all sessions
-    const fetchSessions = async () => {
+    const fetchSessions = useCallback(async () => {
         if (!provider) return;
         try {
             const signer = await provider.getSigner();
@@ -85,10 +89,10 @@ export default function VotePage() {
             console.error("Error fetching sessions:", err);
             toast.error(getRpcErrorMessage(err));
         }
-    };
+    }, [provider]);
 
     // Fetch details when a session is selected
-    const fetchSessionDetails = async (sessionId: number) => {
+    const fetchSessionDetails = useCallback(async (sessionId: number) => {
         if (!provider || !account) return;
         const seq = ++fetchSessionSeq.current;
         setLoading(true);
@@ -97,16 +101,19 @@ export default function VotePage() {
             const signer = await provider.getSigner();
             const contract = getVotingContract(signer);
 
-            // Fetch Candidates for this session
-            const candidatesRaw = await contract.getCandidates(sessionId);
+            const candidatesResponse = await publicApiFetch(`/api/read-model/sessions/${sessionId}/results`);
+            const candidatesPayload = await candidatesResponse.json().catch(() => ({}));
+            if (!candidatesResponse.ok || !candidatesPayload.success) {
+                throw new Error(candidatesPayload.error || "Gagal memuat kandidat");
+            }
             if (seq !== fetchSessionSeq.current) return;
 
-            const loadedCandidates = candidatesRaw.map((c: any) => ({
+            const loadedCandidates = (candidatesPayload.candidates || []).map((c: any) => ({
                 id: Number(c.id),
-                name: c.name,
-                photoUrl: c.photoUrl,
-                vision: c.vision,
-                mission: c.mission,
+                name: String(c.name),
+                photoUrl: String(c.photoUrl || ""),
+                vision: String(c.vision || ""),
+                mission: String(c.mission || ""),
                 voteCount: Number(c.voteCount)
             }));
             setCandidates(loadedCandidates);
@@ -142,17 +149,17 @@ export default function VotePage() {
                 setLoading(false);
             }
         }
-    };
+    }, [account, provider]);
 
     useEffect(() => {
         if (isConnected) fetchSessions();
-    }, [isConnected, provider, refreshKey]);
+    }, [isConnected, refreshKey, fetchSessions]);
 
     useEffect(() => {
         if (selectedSessionId && isConnected && account) {
             fetchSessionDetails(selectedSessionId);
         }
-    }, [selectedSessionId, isConnected, account, refreshKey]);
+    }, [selectedSessionId, isConnected, account, refreshKey, fetchSessionDetails]);
 
     // Refetch when user returns to tab (e.g. after bind/claim NFT)
     useEffect(() => {
@@ -436,11 +443,13 @@ export default function VotePage() {
                     {candidates.map((c) => (
                         <div key={c.id} className="glass-panel p-5 rounded-xl hover:bg-white/5 transition flex flex-col items-center">
                             {c.photoUrl ? (
-                                <img
-                                    src={getValidImageUrl(c.photoUrl)}
+                                <Image
+                                    src={getValidImageUrl(c.photoUrl) || FALLBACK_CANDIDATE_IMAGE}
                                     alt={c.name}
+                                    width={96}
+                                    height={96}
                                     className="w-24 h-24 rounded-full mb-4 object-cover border-2 border-blue-500"
-                                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150'; }}
+                                    unoptimized
                                 />
                             ) : (
                                 <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full mb-4 flex items-center justify-center text-2xl font-bold text-white">

@@ -1,8 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import toast from "react-hot-toast";
 import { getValidImageUrl } from "../../utils/image";
 import { uploadAdminImage } from "../../utils/api";
+
+const FALLBACK_CANDIDATE_IMAGE =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Crect width='160' height='160' rx='24' fill='%23111827'/%3E%3Ccircle cx='80' cy='62' r='28' fill='%233b82f6' fill-opacity='0.85'/%3E%3Cpath d='M38 130c8-23 29-36 42-36s34 13 42 36' fill='%233b82f6' fill-opacity='0.55'/%3E%3C/svg%3E";
 
 export function AddCandidatePanel({
     targetSessionId,
@@ -101,10 +105,13 @@ export function AddCandidatePanel({
                         ) : (
                             <div className="flex items-center justify-between mt-2 p-3 bg-white/5 rounded-lg border border-gray-700">
                                 <div className="flex items-center gap-3 overflow-hidden">
-                                    <img
-                                        src={getValidImageUrl(candidatePhotoUrl)}
+                                    <Image
+                                        src={getValidImageUrl(candidatePhotoUrl) || FALLBACK_CANDIDATE_IMAGE}
                                         alt="Preview"
+                                        width={56}
+                                        height={56}
                                         className="w-14 h-14 object-cover rounded-lg border border-gray-600 flex-shrink-0"
+                                        unoptimized
                                     />
                                     <p className="text-gray-400 text-xs truncate">Foto Kandidat Terpilih</p>
                                 </div>

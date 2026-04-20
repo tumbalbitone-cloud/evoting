@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { ethers, Contract } from "ethers";
+import React, { useCallback, useEffect, useState } from "react";
+import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import { useWallet } from "../../context/WalletContext";
 import VotingArtifact from "../../contracts/VotingSystem.json";
 import { getRpcErrorMessage } from "../../utils/rpcError";
 import { getBlockExplorerTxUrl } from "../../utils/explorer";
+import { publicApiFetch } from "../../utils/api";
 
 
 interface VoteRecord {
@@ -26,7 +27,58 @@ export default function HistoryPage() {
     const [loadingTx, setLoadingTx] = useState(false);
     const [chainId, setChainId] = useState<bigint | null>(null);
 
-    const fetchHistory = async () => {
+    const enrichHistoryLabels = useCallback(async (records: VoteRecord[]) => {
+        if (records.length === 0) return records;
+
+        const sessionResponse = await publicApiFetch("/api/read-model/sessions");
+        const sessionPayload = await sessionResponse.json().catch(() => ({}));
+        if (!sessionResponse.ok || !sessionPayload.success) {
+            return records;
+        }
+
+        const sessionMap = new Map<number, { name: string; description: string }>(
+            ((sessionPayload.sessions || []) as any[]).map((session) => [
+                Number(session.id),
+                {
+                    name: String(session.name || `Sesi #${session.id}`),
+                    description: String(session.description || ""),
+                },
+            ])
+        );
+
+        const sessionIds = [...new Set(records.map((record) => record.sessionId))];
+        const resultsEntries = await Promise.all(sessionIds.map(async (sessionId) => {
+            try {
+                const response = await publicApiFetch(`/api/read-model/sessions/${sessionId}/results`);
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload.success) {
+                    return [sessionId, new Map()] as const;
+                }
+
+                const candidateMap = new Map<number, string>(
+                    ((payload.candidates || []) as any[]).map((candidate) => [
+                        Number(candidate.id),
+                        String(candidate.name || `Kandidat #${candidate.id}`),
+                    ])
+                );
+
+                return [sessionId, candidateMap] as const;
+            } catch {
+                return [sessionId, new Map()] as const;
+            }
+        }));
+
+        const resultsMap = new Map(resultsEntries);
+
+        return records.map((record) => ({
+            ...record,
+            sessionName: sessionMap.get(record.sessionId)?.name || `Sesi #${record.sessionId}`,
+            sessionDescription: sessionMap.get(record.sessionId)?.description || "",
+            candidateName: resultsMap.get(record.sessionId)?.get(record.candidateId) || `Kandidat #${record.candidateId}`,
+        }));
+    }, []);
+
+    const fetchHistory = useCallback(async () => {
         if (!provider || !account) return;
         setLoading(true);
         try {
@@ -44,12 +96,13 @@ export default function HistoryPage() {
                 sessionId: Number(r.sessionId),
                 candidateId: Number(r.candidateId),
                 timestamp: Number(r.timestamp),
-                sessionName: r.sessionName,
-                candidateName: r.candidateName,
+                sessionName: "",
+                candidateName: "",
                 txHash: undefined,
             }));
             loadedHistory.sort((a, b) => b.timestamp - a.timestamp);
-            setHistory(loadedHistory);
+            const enrichedHistory = await enrichHistoryLabels(loadedHistory);
+            setHistory(enrichedHistory);
             setLoading(false);
 
             if (loadedHistory.length === 0) return;
@@ -95,11 +148,11 @@ export default function HistoryPage() {
             toast.error(getRpcErrorMessage(err));
             setLoading(false);
         }
-    };
+    }, [account, provider, enrichHistoryLabels]);
 
     useEffect(() => {
         if (isConnected) fetchHistory();
-    }, [isConnected, provider, account]);
+    }, [isConnected, fetchHistory]);
 
     useEffect(() => {
         if (!provider) {
@@ -116,7 +169,7 @@ export default function HistoryPage() {
         };
         document.addEventListener("visibilitychange", onVisible);
         return () => document.removeEventListener("visibilitychange", onVisible);
-    }, [isConnected, provider, account]);
+    }, [isConnected, fetchHistory]);
 
     if (!isConnected) return <div className="text-center pt-20">Silakan hubungkan wallet</div>;
 
@@ -129,7 +182,7 @@ export default function HistoryPage() {
 
                 {loadingTx && (
                     <p className="text-center text-xs text-gray-500 mb-4 animate-pulse">
-                        ⏳ Memuat Tx Hash di latar belakang...
+                        ⏳ Memuat Transaksi di latar belakang...
                     </p>
                 )}
                 <div className="glass-panel rounded-xl border border-white/10 overflow-hidden">

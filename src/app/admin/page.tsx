@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { useWallet } from "../../context/WalletContext";
 import VotingArtifact from "../../contracts/VotingSystem.json";
@@ -109,18 +109,6 @@ export default function AdminPage() {
     }, [router]);
 
     useEffect(() => {
-        if (provider) fetchSessions();
-    }, [provider, refreshKey]);
-
-    useEffect(() => {
-        const onVisible = () => {
-            if (document.visibilityState === "visible" && provider) fetchSessions();
-        };
-        document.addEventListener("visibilitychange", onVisible);
-        return () => document.removeEventListener("visibilitychange", onVisible);
-    }, [provider]);
-
-    useEffect(() => {
         if (adminGate !== "ok") return;
         const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         const socket = io(getApiBaseUrl(), {
@@ -143,7 +131,7 @@ export default function AdminPage() {
         };
     }, [adminGate]);
 
-    const fetchStudentDirectory = async (keyword = "", silent = false) => {
+    const fetchStudentDirectory = useCallback(async (keyword = "", silent = false) => {
         setStudentDirectoryLoading(true);
         try {
             const params = new URLSearchParams();
@@ -164,7 +152,7 @@ export default function AdminPage() {
             }
         }
         setStudentDirectoryLoading(false);
-    };
+    }, []);
 
     const resolveAllowlistEntries = async (entries: string[]) => {
         const addresses: string[] = [];
@@ -223,45 +211,31 @@ export default function AdminPage() {
         return { addresses, unresolved };
     };
 
-    const fetchSessions = async () => {
+    const fetchSessions = useCallback(async () => {
         try {
-            const readProvider = provider || new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
-            const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
-                VotingArtifact.abi,
-                readProvider
-            );
+            const response = await authApiFetch("/api/read-model/sessions", { method: "GET" });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || "Gagal memuat sesi");
+            }
 
-            const data = await contract.getAllSessions();
-            const formattedSessions = data.map((s: Record<string, unknown>) => ({
-                id: Number(s.id),
-                name: s.name as string,
-                description: s.description as string,
-                startTime: Number(s.startTime),
-                endTime: Number(s.endTime),
-                isActive: s.isActive as boolean,
-            }));
-
-            formattedSessions.sort((a: Session, b: Session) => a.id - b.id);
+            const formattedSessions = ((payload.sessions || []) as Session[]).sort((a, b) => a.id - b.id);
             setSessions(formattedSessions);
         } catch (err) {
             console.error("Kesalahan saat memuat sesi:", err);
-            toast.error(getRpcErrorMessage(err));
+            toast.error(err instanceof Error ? err.message : "Gagal memuat sesi");
         }
-    };
+    }, []);
 
-    const fetchSessionAllowlist = async (sessionId: number) => {
+    const fetchSessionAllowlist = useCallback(async (sessionId: number) => {
         try {
-            const readProvider = provider || new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
-            const contract = getAllowlistContract(readProvider);
-            const sessionsCount = Number(await contract.sessionsCount());
-            if (sessionId < 1 || sessionId > sessionsCount) {
-                setAllowlistAddresses([]);
-                setDraftAllowlist([]);
-                return;
+            const response = await authApiFetch(`/api/read-model/sessions/${sessionId}/allowlist`, { method: "GET" });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || "Gagal memuat daftar pemilih sesi");
             }
-            const voters = await contract.getSessionAllowedVoters(sessionId);
-            const normalized = voters.map((address: string) => ethers.getAddress(address));
+
+            const normalized = ((payload.addresses || []) as string[]).map((address: string) => ethers.getAddress(address));
             setAllowlistAddresses(normalized);
             setDraftAllowlist(normalized.map((addr: string) => ({ value: addr, label: formatShortAddress(addr) })));
         } catch (err) {
@@ -269,7 +243,19 @@ export default function AdminPage() {
             setAllowlistAddresses([]);
             setDraftAllowlist([]);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        if (provider) fetchSessions();
+    }, [provider, refreshKey, fetchSessions]);
+
+    useEffect(() => {
+        const onVisible = () => {
+            if (document.visibilityState === "visible" && provider) fetchSessions();
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => document.removeEventListener("visibilitychange", onVisible);
+    }, [provider, fetchSessions]);
 
     useEffect(() => {
         if (sessions.length === 0) return;
@@ -279,9 +265,9 @@ export default function AdminPage() {
     }, [sessions, allowlistSessionId]);
 
     useEffect(() => {
-        if (!provider || allowlistSessionId <= 0) return;
+        if (allowlistSessionId <= 0) return;
         fetchSessionAllowlist(allowlistSessionId);
-    }, [provider, allowlistSessionId, refreshKey]);
+    }, [allowlistSessionId, refreshKey, fetchSessionAllowlist]);
 
     useEffect(() => {
         if (!isConnected) return;
@@ -296,7 +282,7 @@ export default function AdminPage() {
         }, 300);
 
         return () => clearTimeout(timer);
-    }, [isConnected, isStudentPickerOpen, studentDirectoryQuery]);
+    }, [isConnected, isStudentPickerOpen, studentDirectoryQuery, fetchStudentDirectory]);
 
     const fetchSessionStats = async (sessionId: number) => {
         if (detailSessionId === sessionId) {
@@ -307,62 +293,22 @@ export default function AdminPage() {
         setStats((prev) => ({ ...prev, loading: true }));
 
         try {
-            const readProvider = provider || new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
-            const contract = getAllowlistContract(readProvider);
-
-            let totalNFTHolders = 0;
-            let registeredLabel = "Pemegang Student NFT";
-            try {
-                const sessionsCount = Number(await contract.sessionsCount());
-                if (sessionId >= 1 && sessionId <= sessionsCount) {
-                    const restrictedVoters = await contract.getSessionAllowedVoters(sessionId);
-                    if (restrictedVoters.length > 0) {
-                        totalNFTHolders = restrictedVoters.length;
-                        registeredLabel = "Daftar pemilih sesi";
-                    } else {
-                        const nextId = await contract.nextTokenId();
-                        totalNFTHolders = Number(nextId);
-                    }
-                } else {
-                    const nextId = await contract.nextTokenId();
-                    totalNFTHolders = Number(nextId);
-                }
-            } catch (e) {
-                console.warn("Could not fetch voter denominator:", e);
-                try {
-                    const nextId = await contract.nextTokenId();
-                    totalNFTHolders = Number(nextId);
-                } catch (nextIdError) {
-                    console.warn("Could not fetch nextTokenId fallback:", nextIdError);
-                }
+            const response = await authApiFetch(`/api/read-model/sessions/${sessionId}/stats`, { method: "GET" });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || "Gagal memuat statistik sesi");
             }
 
-            let uniqueVoterCount = 0;
-            try {
-                const CHUNK_SIZE = 9000;
-                const deployBlock = Number(process.env.NEXT_PUBLIC_CONTRACT_DEPLOY_BLOCK ?? 0);
-                const latestBlock = await readProvider.getBlockNumber();
-                const filter = contract.filters.Voted(sessionId, null, null);
-                const voterAddresses = new Set<string>();
-                for (let from = deployBlock; from <= latestBlock; from += CHUNK_SIZE) {
-                    const to = Math.min(from + CHUNK_SIZE - 1, latestBlock);
-                    const chunk = await contract.queryFilter(filter, from, to);
-                    for (const log of chunk) {
-                        if (!(log instanceof ethers.EventLog)) continue;
-                        const voter = log.args?.voter;
-                        if (voter != null) voterAddresses.add(String(voter).toLowerCase());
-                    }
-                }
-                uniqueVoterCount = voterAddresses.size;
-            } catch (e) {
-                console.warn("Could not fetch voter events:", e);
-            }
-
-            const participationRate =
-                totalNFTHolders > 0 ? ((uniqueVoterCount / totalNFTHolders) * 100).toFixed(1) : "0.0";
-            setStats({ totalNFTHolders, uniqueVoterCount, participationRate, registeredLabel, loading: false });
+            setStats({
+                totalNFTHolders: Number(payload.totalNFTHolders || 0),
+                uniqueVoterCount: Number(payload.uniqueVoterCount || 0),
+                participationRate: String(payload.participationRate || "0.0"),
+                registeredLabel: String(payload.registeredLabel || "Pemegang Student NFT"),
+                loading: false,
+            });
         } catch (err) {
             console.error("Kesalahan saat memuat statistik sesi:", err);
+            toast.error(err instanceof Error ? err.message : "Gagal memuat statistik sesi");
             setStats((prev) => ({ ...prev, loading: false }));
         }
     };
@@ -428,14 +374,33 @@ export default function AdminPage() {
                 signer
             );
 
-            const tx = await contract.addCandidate(
-                targetSessionId,
-                candidateName,
-                candidatePhotoUrl,
-                candidateVision,
-                candidateMission
-            );
+            const tx = await contract.addCandidate(targetSessionId, candidateName);
             await tx.wait();
+
+            const createdCandidates = await contract.getCandidates(targetSessionId);
+            const latestCandidate = createdCandidates[createdCandidates.length - 1];
+            const candidateId = Number(latestCandidate?.id);
+            if (!candidateId) {
+                throw new Error("Kandidat berhasil ditambahkan, tetapi candidateId tidak dapat dibaca.");
+            }
+
+            const metadataResponse = await authApiFetch("/api/candidates/metadata", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sessionId: targetSessionId,
+                    candidateId,
+                    name: candidateName,
+                    photoUrl: candidatePhotoUrl,
+                    vision: candidateVision,
+                    mission: candidateMission,
+                }),
+            });
+            const metadataPayload = await metadataResponse.json().catch(() => ({}));
+            if (!metadataResponse.ok || !metadataPayload.success) {
+                throw new Error(metadataPayload.error || "Kandidat on-chain berhasil ditambahkan, tetapi sinkronisasi metadata gagal.");
+            }
+
             toast.success(`Kandidat "${candidateName}" ditambahkan ke Sesi ${targetSessionId}`);
             setCandidateName("");
             setCandidatePhotoUrl("");

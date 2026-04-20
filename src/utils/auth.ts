@@ -3,124 +3,145 @@
  */
 import { getApiBaseUrl } from "./apiConfig";
 
+const TOKEN_KEY = "token";
+const REFRESH_TOKEN_KEY = "refreshToken";
+const ROLE_KEY = "role";
+const USERNAME_KEY = "username";
+const REFRESH_PATH = "/api/auth/refresh";
+const JWT_SEGMENT_COUNT = 3;
+const TOKEN_EXPIRY_BUFFER_SECONDS = 60;
+
 export const isValidJWT = (token: string | null): boolean => {
-    if (!token) return false;
-    const parts = token.split(".");
-    return parts.length === 3;
+  if (!token) {
+    return false;
+  }
+
+  return token.split(".").length === JWT_SEGMENT_COUNT;
 };
 
 export const isMockToken = (token: string | null): boolean => {
-    if (!token) return false;
-    return token === "mock-admin-token" || token === "mock-user-token" || token === "mock-jwt-token";
+  if (!token) {
+    return false;
+  }
+
+  return token === "mock-admin-token" || token === "mock-user-token" || token === "mock-jwt-token";
 };
 
 export const clearAuth = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("role");
-    localStorage.removeItem("username");
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(ROLE_KEY);
+  localStorage.removeItem(USERNAME_KEY);
 };
 
 export const getValidToken = (): string | null => {
-    const token = localStorage.getItem("token");
+  const token = localStorage.getItem(TOKEN_KEY);
 
-    if (!token) {
-        return null;
-    }
+  if (!token) {
+    return null;
+  }
 
-    if (isMockToken(token)) {
-        console.warn("Token mock lama terdeteksi. Silakan login kembali.");
-        clearAuth();
-        return null;
-    }
+  if (isMockToken(token)) {
+    console.warn("Token mock lama terdeteksi. Silakan login kembali.");
+    clearAuth();
+    return null;
+  }
 
-    if (!isValidJWT(token)) {
-        console.warn("Format token tidak valid. Silakan login kembali.");
-        clearAuth();
-        return null;
-    }
+  if (!isValidJWT(token)) {
+    console.warn("Format token tidak valid. Silakan login kembali.");
+    clearAuth();
+    return null;
+  }
 
-    return token;
+  return token;
 };
 
 let refreshInFlight: Promise<string | null> | null = null;
 
 export const refreshAccessToken = async (): Promise<string | null> => {
-    if (refreshInFlight) {
-        return refreshInFlight;
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
+
+  refreshInFlight = (async (): Promise<string | null> => {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+
+    if (!refreshToken) {
+      return null;
     }
 
-    refreshInFlight = (async (): Promise<string | null> => {
-        const refreshToken = localStorage.getItem("refreshToken");
+    try {
+      const endpoint = `${getApiBaseUrl().replace(/\/$/, "")}${REFRESH_PATH}`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
 
-        if (!refreshToken) {
-            return null;
-        }
+      if (response.status === 401) {
+        clearAuth();
+        return null;
+      }
 
-        try {
-            const base = getApiBaseUrl();
-            const res = await fetch(`${base.replace(/\/$/, "")}/api/auth/refresh`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ refreshToken }),
-            });
+      if (!response.ok) {
+        throw new Error("Gagal memperbarui token");
+      }
 
-            if (res.status === 401) {
-                clearAuth();
-                return null;
-            }
+      const data = await response.json();
 
-            if (!res.ok) {
-                throw new Error("Gagal memperbarui token");
-            }
+      if (data.success && data.token) {
+        localStorage.setItem(TOKEN_KEY, data.token);
+        return data.token;
+      }
 
-            const data = await res.json();
+      return null;
+    } catch (error) {
+      console.error("Gagal memperbarui token:", error);
 
-            if (data.success && data.token) {
-                localStorage.setItem("token", data.token);
-                return data.token;
-            }
+      if (error instanceof TypeError) {
+        return null;
+      }
 
-            return null;
-        } catch (error) {
-            console.error("Gagal memperbarui token:", error);
-            if (error instanceof TypeError) {
-                return null;
-            }
-            clearAuth();
-            return null;
-        } finally {
-            refreshInFlight = null;
-        }
-    })();
+      clearAuth();
+      return null;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
 
-    return refreshInFlight;
+  return refreshInFlight;
+};
+
+const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4 || 4)) % 4), "=");
+    const decoded =
+      typeof globalThis.atob === "function"
+        ? globalThis.atob(padded)
+        : Buffer.from(padded, "base64").toString("utf-8");
+
+    return JSON.parse(decoded) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 };
 
 export const isTokenExpired = (token: string | null): boolean => {
-    if (!token || !isValidJWT(token)) return true;
+  if (!token || !isValidJWT(token)) {
+    return true;
+  }
 
-    try {
-        const parts = token.split(".");
-        const base64Url = parts[1];
-        const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-        const padded = base64.padEnd(base64.length + (4 - (base64.length % 4 || 4)) % 4, "=");
+  const payload = decodeJwtPayload(token);
+  const exp = payload?.exp;
 
-        const decoded =
-            typeof globalThis.atob === "function"
-                ? globalThis.atob(padded)
-                : Buffer.from(padded, "base64").toString("utf-8");
+  if (typeof exp !== "number") {
+    return true;
+  }
 
-        const payload = JSON.parse(decoded);
-        const exp = payload.exp;
-
-        if (!exp) return true;
-
-        const now = Math.floor(Date.now() / 1000);
-        return exp < now + 60;
-    } catch {
-        return true;
-    }
+  const now = Math.floor(Date.now() / 1000);
+  return exp < now + TOKEN_EXPIRY_BUFFER_SECONDS;
 };

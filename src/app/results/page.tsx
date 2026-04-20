@@ -1,14 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { ethers } from "ethers";
+import Image from "next/image";
 import toast from "react-hot-toast";
-import { useWallet } from "../../context/WalletContext";
-import VotingArtifact from "../../contracts/VotingSystem.json";
-import { getRpcErrorMessage } from "../../utils/rpcError";
 import io from "socket.io-client";
 import { getValidImageUrl } from "../../utils/image";
-import { getApiBaseUrl } from "../../utils/api";
+import { getApiBaseUrl, publicApiFetch } from "../../utils/api";
 import {
     PieChart,
     Pie,
@@ -57,6 +54,9 @@ const CHART_COLORS = [
     "#ec4899", // pink
     "#84cc16", // lime
 ];
+
+const FALLBACK_CANDIDATE_IMAGE =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Crect width='160' height='160' rx='80' fill='%23111827'/%3E%3Ccircle cx='80' cy='62' r='28' fill='%233b82f6' fill-opacity='0.85'/%3E%3Cpath d='M38 130c8-23 29-36 42-36s34 13 42 36' fill='%233b82f6' fill-opacity='0.55'/%3E%3C/svg%3E";
 
 // ─── Custom Tooltip for Pie Chart ─────────────────────────────────────────────
 
@@ -180,7 +180,6 @@ function VoteBarChart({ candidates }: { candidates: Candidate[] }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ResultsPage() {
-    const { provider } = useWallet();
     const [sessions, setSessions] = useState<Session[]>([]);
     const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -201,89 +200,54 @@ export default function ResultsPage() {
     // ── Fetch session list ──────────────────────────────────────────────────
     useEffect(() => {
         const fetchSessions = async () => {
-            const readProvider =
-                provider ||
-                new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
             try {
-                const contract = new ethers.Contract(
-                    process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
-                    VotingArtifact.abi,
-                    readProvider
-                );
-                const data = await contract.getAllSessions();
-                const formattedSessions = data.map((s: any) => ({
-                    id: Number(s.id),
-                    name: s.name,
-                    description: s.description,
-                    startTime: Number(s.startTime),
-                    endTime: Number(s.endTime),
-                    isActive: s.isActive,
-                }));
-                formattedSessions.sort((a: Session, b: Session) => b.id - a.id);
+                const response = await publicApiFetch("/api/read-model/sessions");
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload.success) {
+                    throw new Error(payload.error || "Gagal memuat daftar sesi");
+                }
+
+                const formattedSessions = (payload.sessions || []) as Session[];
                 setSessions(formattedSessions);
-                if (formattedSessions.length > 0 && selectedSessionId === null) {
-                    setSelectedSessionId(formattedSessions[0].id);
+                if (formattedSessions.length > 0) {
+                    setSelectedSessionId((current) => current ?? formattedSessions[0].id);
                 }
             } catch (err) {
                 console.error("Error fetching sessions:", err);
-                toast.error(getRpcErrorMessage(err));
+                toast.error(err instanceof Error ? err.message : "Gagal memuat daftar sesi");
             }
         };
         fetchSessions();
-    }, [provider, refreshKey]);
+    }, [refreshKey]);
 
     const fetchResults = useCallback(async () => {
         if (selectedSessionId === null) return;
 
         setLoading(true);
         const seq = ++fetchResultsSeq.current;
-        const readProvider =
-            provider ||
-            new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
 
         try {
-            const contract = new ethers.Contract(
-                process.env.NEXT_PUBLIC_VOTING_SYSTEM_ADDRESS!,
-                VotingArtifact.abi,
-                readProvider
-            );
-
-            const data = await contract.getCandidates(selectedSessionId);
+            const response = await publicApiFetch(`/api/read-model/sessions/${selectedSessionId}/results`);
+            const payload = await response.json().catch(() => ({}));
             if (seq !== fetchResultsSeq.current) return;
-            let totalVotes = 0;
-            const loadedCandidates: Candidate[] = data.map((c: any) => {
-                const votes = Number(c.voteCount);
-                totalVotes += votes;
-                return {
-                    id: Number(c.id),
-                    name: c.name,
-                    photoUrl: c.photoUrl,
-                    vision: c.vision,
-                    mission: c.mission,
-                    voteCount: votes,
-                };
-            });
 
-            const candidatesWithStats = loadedCandidates.map((c) => ({
-                ...c,
-                percentage:
-                    totalVotes === 0
-                        ? "0.0"
-                        : ((c.voteCount / totalVotes) * 100).toFixed(1),
-            }));
-            candidatesWithStats.sort((a, b) => b.voteCount - a.voteCount);
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || "Gagal memuat hasil pemilihan");
+            }
+
+            const candidatesWithStats = (payload.candidates || []) as Candidate[];
             if (seq !== fetchResultsSeq.current) return;
             setCandidates(candidatesWithStats);
         } catch (err) {
             if (seq !== fetchResultsSeq.current) return;
             console.error("Error fetching results:", err);
-            toast.error(getRpcErrorMessage(err));
+            toast.error(err instanceof Error ? err.message : "Gagal memuat hasil pemilihan");
         } finally {
             if (seq === fetchResultsSeq.current) {
                 setLoading(false);
             }
         }
-    }, [selectedSessionId, provider]);
+    }, [selectedSessionId]);
 
     // Run when session changes
     useEffect(() => {
@@ -538,16 +502,13 @@ export default function ResultsPage() {
 
                                                             {/* Photo */}
                                                             {c.photoUrl && (
-                                                                <img
-                                                                    src={getValidImageUrl(c.photoUrl)}
+                                                                <Image
+                                                                    src={getValidImageUrl(c.photoUrl) || FALLBACK_CANDIDATE_IMAGE}
                                                                     alt={c.name}
+                                                                    width={44}
+                                                                    height={44}
                                                                     className="w-11 h-11 rounded-full object-cover border border-white/10 shrink-0"
-                                                                    onError={(e) => {
-                                                                        (
-                                                                            e.target as HTMLImageElement
-                                                                        ).src =
-                                                                            "https://via.placeholder.com/150";
-                                                                    }}
+                                                                    unoptimized
                                                                 />
                                                             )}
 

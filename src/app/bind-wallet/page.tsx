@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useWallet } from "../../context/WalletContext";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -57,13 +57,9 @@ export default function BindWallet() {
         setStudentId(storedStudentId);
     }, [router]);
 
-    useEffect(() => {
-        if (account && studentId) {
-            checkStatus();
-        }
-    }, [account, studentId]);
+    const checkStatus = useCallback(async () => {
+        if (!account) return;
 
-    const checkStatus = async () => {
         try {
             const res = await authApiFetch(`/api/did/status/${account}`);
             if (res.status === 401) {
@@ -121,7 +117,13 @@ export default function BindWallet() {
                 console.error(error);
             }
         }
-    };
+    }, [account, router, studentId]);
+
+    useEffect(() => {
+        if (account && studentId) {
+            checkStatus();
+        }
+    }, [account, studentId, checkStatus]);
 
     const bindWallet = async () => {
         if (!account) {
@@ -133,11 +135,15 @@ export default function BindWallet() {
             return;
         }
         if (!studentId) return;
+        if (!provider) {
+            toast.error("Provider wallet tidak tersedia. Coba hubungkan ulang MetaMask.");
+            return;
+        }
 
-        setStatus("Menautkan wallet...");
+        setStatus("Meminta persetujuan tanda tangan wallet...");
 
         try {
-            const res = await authApiFetch("/api/did/bind", {
+            const challengeRes = await authApiFetch("/api/did/bind/challenge", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -145,10 +151,49 @@ export default function BindWallet() {
                 body: JSON.stringify({ studentId, userAddress: account }),
             });
 
-            if (!res.ok) {
-                const errorData = await res.json();
+            if (!challengeRes.ok) {
+                const errorData = await challengeRes.json().catch(() => ({}));
+                if (challengeRes.status === 401) {
+                    clearAuth();
+                    setStatus("Kesalahan: Sesi berakhir. Mengalihkan ke halaman login...");
+                    setTimeout(() => {
+                        router.push("/login");
+                    }, 2000);
+                    return;
+                }
+                throw new Error(errorData.error || `HTTP error! status: ${challengeRes.status}`);
+            }
 
-                // If 401, clear auth and redirect to login
+            const challengeData = await challengeRes.json();
+            if (!challengeData.success || !challengeData.challengeToken || !challengeData.message) {
+                throw new Error("Challenge wallet tidak valid. Silakan coba lagi.");
+            }
+
+            const signer = await provider.getSigner();
+            const signerAddress = await signer.getAddress();
+            if (signerAddress.toLowerCase() !== account.toLowerCase()) {
+                throw new Error("Wallet aktif berubah. Silakan hubungkan ulang wallet yang ingin ditautkan.");
+            }
+
+            const signature = await signer.signMessage(challengeData.message);
+
+            setStatus("Memverifikasi tanda tangan wallet...");
+
+            const res = await authApiFetch("/api/did/bind", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    studentId,
+                    userAddress: account,
+                    signature,
+                    challengeToken: challengeData.challengeToken,
+                }),
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
                 if (res.status === 401) {
                     clearAuth();
                     setStatus("Kesalahan: Sesi berakhir. Mengalihkan ke halaman login...");
@@ -157,11 +202,9 @@ export default function BindWallet() {
                     }, 2000);
                     return;
                 }
-
-                throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
+                throw new Error(data.error || `HTTP error! status: ${res.status}`);
             }
 
-            const data = await res.json();
             if (!data.success) {
                 throw new Error(data.error || "Gagal menautkan wallet");
             }
@@ -248,7 +291,7 @@ export default function BindWallet() {
     return (
         <div className="min-h-screen bg-dark-900 pt-20 px-4">
             <div className="max-w-md mx-auto bg-white/5 p-8 rounded-2xl backdrop-blur-xl border border-white/10 text-center">
-                <h1 className="text-2xl font-bold mb-6 text-white">Tautkan Wallet</h1>
+                <h1 className="text-2xl font-bold mb-6 text-white">Hubungkan Wallet</h1>
 
                 <div className="mb-6 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
                     <p className="text-sm text-blue-200 uppercase tracking-wider mb-1">Login sebagai</p>
@@ -282,7 +325,7 @@ export default function BindWallet() {
                                 onClick={bindWallet}
                                 className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition shadow-lg shadow-blue-600/20"
                             >
-                                Tautkan Wallet ke Akun
+                                Hubungkan Wallet
                             </button>
                         )}
                         {(usedByOther || walletBlocked) && (
@@ -293,7 +336,7 @@ export default function BindWallet() {
 
                         {nftClaimed && (
                             <div className="p-4 bg-purple-500/20 text-purple-200 rounded-xl border border-purple-500/30 space-y-2">
-                                <div className="font-semibold px-2 py-1">✓ Student NFT Sudah Diklaim</div>
+                                <div className="font-semibold px-2 py-1">✓ NFT Sudah Diklaim</div>
                                 {txHash && (
                                     <div className="text-xs bg-black/40 p-2 rounded-lg border border-purple-500/20 font-mono flex flex-col items-center gap-1.5">
                                         <span className="text-purple-300">Hash Transaksi:</span>
@@ -312,20 +355,20 @@ export default function BindWallet() {
 
                         {alreadyBound && !vc && !nftClaimed && (
                             <div className="p-4 bg-green-500/20 text-green-200 rounded-xl border border-green-500/30">
-                                ✓ Wallet Sudah Tertaut
+                                ✓ Wallet Sudah terhubung
                             </div>
                         )}
 
                         {vc && !nftClaimed && (
                             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
                                 <div className="p-4 bg-green-500/20 text-green-200 rounded-xl border border-green-500/30">
-                                    ✓ Wallet Berhasil Ditautkan
+                                    ✓ Wallet Berhasil Dihubungkan
                                 </div>
                                 <button
                                     onClick={registerForElection}
                                     className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-lg shadow-purple-600/20"
                                 >
-                                    Klaim Student NFT (Wajib untuk Voting)
+                                    Klaim NFT (Wajib untuk Voting)
                                 </button>
                             </div>
                         )}

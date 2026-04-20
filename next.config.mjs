@@ -5,6 +5,18 @@ const nextConfig = {
     allowedDevOrigins: [
         'http://localhost:3000',
     ],
+    images: {
+        remotePatterns: [
+            {
+                protocol: 'https',
+                hostname: '**',
+            },
+            {
+                protocol: 'http',
+                hostname: '**',
+            },
+        ],
+    },
     async rewrites() {
         return [
             {
