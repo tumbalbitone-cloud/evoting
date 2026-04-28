@@ -14,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="id">
       <body className="min-h-screen bg-dark-900 text-white selection:bg-blue-500/30">
         <Providers>
           <Navbar />

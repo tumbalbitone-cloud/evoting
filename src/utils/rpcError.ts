@@ -9,12 +9,19 @@ export function getRpcErrorMessage(err: unknown): string {
 
     const msg = typeof (err as any)?.message === "string" ? (err as any).message : "";
     const reason = typeof (err as any)?.reason === "string" ? (err as any).reason : "";
-    const code = (err as any)?.code;
-    const str = `${msg} ${reason}`.toLowerCase();
+    const code = (err as any)?.code ?? (err as any)?.error?.code ?? (err as any)?.data?.originalError?.code;
+    const shortMessage = typeof (err as any)?.shortMessage === "string" ? (err as any).shortMessage : "";
+    const infoErrorMessage = typeof (err as any)?.info?.error?.message === "string" ? (err as any).info.error.message : "";
+    const explicitUserMessage = typeof (err as any)?.userMessage === "string" ? (err as any).userMessage : "";
+    if (explicitUserMessage) return explicitUserMessage;
+    const str = `${msg} ${reason} ${shortMessage} ${infoErrorMessage}`.toLowerCase();
 
     // User rejected / cancelled in wallet
     if (code === 4001 || code === "ACTION_REJECTED" || str.includes("user rejected") || str.includes("user denied")) {
-        return "Transaksi dibatalkan di wallet.";
+        if (str.includes("chain") || str.includes("network") || str.includes("wallet_switchethereumchain") || str.includes("wallet_addethereumchain")) {
+            return "Pergantian jaringan dibatalkan di wallet.";
+        }
+        return "Permintaan dibatalkan di wallet.";
     }
 
     // Network / RPC unreachable
@@ -57,7 +64,7 @@ export function getRpcErrorMessage(err: unknown): string {
 
     // Wrong network
     if (code === 4902 || str.includes("chain") && str.includes("not added") || str.includes("unrecognized chain")) {
-        return "Jaringan belum ditambahkan di wallet. Setujui penambahan jaringan yang diminta.";
+        return "Jaringan yang dibutuhkan belum ada di wallet. Setujui penambahan jaringan yang diminta.";
     }
 
     // Nonce / replacement (user might have sent duplicate)

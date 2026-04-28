@@ -27,6 +27,7 @@ export function AdminTabBar({
                 {btn("monitor", "📊 Monitor Sesi", "bg-blue-600")}
                 {btn("manage", "⚙️ Manajemen Sesi", "bg-purple-600")}
                 {btn("users", "👥 Pengguna", "bg-emerald-600")}
+                {btn("admin-management", "🛡️ Kelola Admin", "bg-orange-600")}
             </div>
         </div>
     );

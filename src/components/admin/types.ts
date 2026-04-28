@@ -46,4 +46,11 @@ export interface BulkImportSummary {
     failed: number;
 }
 
-export type AdminTab = "monitor" | "manage" | "users";
+export type AdminTab = "monitor" | "manage" | "users" | "admin-management";
+
+export interface AdminAccount {
+    id: string;
+    username: string;
+    name: string;
+    active: boolean;
+}

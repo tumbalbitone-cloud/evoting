@@ -13,6 +13,7 @@ import { AdminTabBar } from "../../components/admin/AdminTabBar";
 import { MonitorSessionsTab } from "../../components/admin/MonitorSessionsTab";
 import { ManageSessionsTab } from "../../components/admin/ManageSessionsTab";
 import { UsersManagementTab } from "../../components/admin/UsersManagementTab";
+import { AdminManagementTab } from "../../components/admin/AdminManagementTab";
 import { StudentPickerModal } from "../../components/admin/StudentPickerModal";
 import { getAllowlistContract } from "../../components/admin/adminContract";
 import { formatShortAddress, unresolvedReasonLabel } from "../../components/admin/adminFormat";
@@ -479,6 +480,28 @@ export default function AdminPage() {
         setLoading(false);
     };
 
+    const handleCreateAdmin = async (username: string, name: string, password: string) => {
+        setLoading(true);
+        try {
+            const res = await authApiFetch("/api/users/create-admin", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, name, password }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.details?.[0]?.msg || "Gagal membuat admin");
+            }
+            toast.success(`Admin "${name}" berhasil dibuat`);
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Gagal membuat admin";
+            toast.error(msg);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleBulkImportUsers = async () => {
         if (!bulkImportFile) {
             toast.error("Pilih file CSV/Excel terlebih dahulu");
@@ -619,6 +642,13 @@ export default function AdminPage() {
                         bulkImportSummary={bulkImportSummary}
                         bulkImportFailedRows={bulkImportFailedRows}
                         onBulkImport={handleBulkImportUsers}
+                    />
+                )}
+
+                {activeTab === "admin-management" && (
+                    <AdminManagementTab
+                        onCreateAdmin={handleCreateAdmin}
+                        loading={loading}
                     />
                 )}
             </div>

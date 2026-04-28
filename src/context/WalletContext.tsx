@@ -29,6 +29,28 @@ const WalletContext = createContext<WalletContextType>({
     walletBlockedMessage: null,
 });
 
+class WalletNetworkError extends Error {
+    userMessage: string;
+
+    constructor(message: string) {
+        super(message);
+        this.name = "WalletNetworkError";
+        this.userMessage = message;
+    }
+}
+
+const getErrorCode = (error: any) =>
+    error?.code ?? error?.error?.code ?? error?.data?.originalError?.code ?? error?.info?.error?.code;
+
+const isUserRejected = (error: any) => {
+    const code = getErrorCode(error);
+    const message = `${error?.message || ""} ${error?.shortMessage || ""} ${error?.info?.error?.message || ""}`.toLowerCase();
+    return code === 4001 || code === "ACTION_REJECTED" || message.includes("user rejected") || message.includes("user denied");
+};
+
+const buildNetworkMessage = (targetChainName: string, targetChainId: bigint, detail: string) =>
+    `${detail} Pilih atau tambahkan jaringan ${targetChainName} (Chain ID ${targetChainId.toString()}) di wallet.`;
+
 export const useWallet = () => useContext(WalletContext);
 
 export const WalletProvider = ({ children }: { children: ReactNode }) => {
@@ -49,12 +71,25 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const checkNetwork = useCallback(async (provider: BrowserProvider) => {
-        const network = await provider.getNetwork();
+        let network;
+        try {
+            network = await provider.getNetwork();
+        } catch (error) {
+            const message = buildNetworkMessage(
+                targetChainName,
+                targetChainId,
+                "Tidak dapat membaca jaringan wallet."
+            );
+            setWalletBlockedMessage(message);
+            throw new WalletNetworkError(message);
+        }
+
         if (network.chainId !== targetChainId) {
             try {
                 await provider.send("wallet_switchEthereumChain", [{ chainId: targetChainHex }]);
+                setWalletBlockedMessage(null);
             } catch (switchError: any) {
-                if (switchError.code === 4902) {
+                if (getErrorCode(switchError) === 4902) {
                     try {
                         await provider.send("wallet_addEthereumChain", [
                             {
@@ -70,26 +105,90 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                             },
                         ]);
                         await provider.send("wallet_switchEthereumChain", [{ chainId: targetChainHex }]);
+                        setWalletBlockedMessage(null);
                     } catch (addError) {
                         console.error(addError);
-                        toast.error(getRpcErrorMessage(addError));
-                        throw addError;
+                        const detail = isUserRejected(addError)
+                            ? `Jaringan ${targetChainName} belum ditambahkan karena permintaan dibatalkan.`
+                            : `Jaringan ${targetChainName} belum ada di wallet atau gagal ditambahkan.`;
+                        const message = buildNetworkMessage(targetChainName, targetChainId, detail);
+                        setWalletBlockedMessage(message);
+                        throw new WalletNetworkError(message);
                     }
                 } else {
-                    toast.error(getRpcErrorMessage(switchError));
-                    throw switchError;
+                    const detail = isUserRejected(switchError)
+                        ? "Pergantian jaringan dibatalkan."
+                        : `Wallet sedang berada di jaringan yang salah.`;
+                    const message = buildNetworkMessage(targetChainName, targetChainId, detail);
+                    setWalletBlockedMessage(message);
+                    throw new WalletNetworkError(message);
                 }
             }
+        } else {
+            setWalletBlockedMessage(null);
         }
     }, [targetBlockExplorerUrl, targetChainHex, targetChainId, targetChainName, targetRpcUrl]);
 
-    const evaluateWalletOwnership = useCallback(async (address: string) => {
+    const bindAdminWallet = useCallback(async (address: string, activeProvider: BrowserProvider | null) => {
+        if (!activeProvider) {
+            return true;
+        }
+
+        const statusRes = await authApiFetch(`/api/did/admin-wallet/status/${address}`);
+        if (statusRes.ok) {
+            const statusData = await statusRes.json().catch(() => ({}));
+            if (statusData?.matches) {
+                return true;
+            }
+        } else if (statusRes.status === 409) {
+            const data = await statusRes.json().catch(() => ({}));
+            throw new Error(data?.error || "Akun admin sudah tertaut ke wallet lain.");
+        }
+
+        const challengeRes = await authApiFetch("/api/did/admin-wallet/challenge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userAddress: address }),
+        });
+
+        const challengeData = await challengeRes.json().catch(() => ({}));
+        if (!challengeRes.ok || !challengeData?.challengeToken || !challengeData?.message) {
+            throw new Error(challengeData?.error || "Gagal membuat challenge wallet admin.");
+        }
+
+        const signer = await activeProvider.getSigner();
+        const signerAddress = await signer.getAddress();
+        if (signerAddress.toLowerCase() !== address.toLowerCase()) {
+            throw new Error("Wallet aktif berubah. Silakan hubungkan ulang wallet admin.");
+        }
+
+        const signature = await signer.signMessage(challengeData.message);
+        const bindRes = await authApiFetch("/api/did/admin-wallet/bind", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                userAddress: address,
+                signature,
+                challengeToken: challengeData.challengeToken,
+            }),
+        });
+
+        if (!bindRes.ok) {
+            const data = await bindRes.json().catch(() => ({}));
+            throw new Error(data?.error || "Gagal menautkan wallet admin.");
+        }
+
+        return true;
+    }, []);
+
+    const evaluateWalletOwnership = useCallback(async (address: string, activeProvider: BrowserProvider | null) => {
         // If user isn't logged in, we can't verify "used by other account" safely.
         // Allow wallet connection but don't block.
         if (typeof window === "undefined") return true;
 
         const token = getValidToken();
         const currentStudentId = localStorage.getItem("username");
+        const currentRole = localStorage.getItem("role");
         if (!token || !currentStudentId) {
             setWalletBlocked(false);
             setWalletBlockedMessage(null);
@@ -97,6 +196,13 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         }
 
         try {
+            if (currentRole === "admin") {
+                await bindAdminWallet(address, activeProvider);
+                setWalletBlocked(false);
+                setWalletBlockedMessage(null);
+                return true;
+            }
+
             const res = await authApiFetch(`/api/did/status/${address}`);
             if (!res.ok) {
                 // Backend deliberately returns 403 when a non-admin tries to check an address
@@ -131,12 +237,20 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
             setWalletBlockedMessage(null);
             return true;
         } catch (err) {
+            const msg = err instanceof Error
+                ? err.message
+                : "Wallet tersebut tidak dapat digunakan untuk akun ini.";
             console.warn("Could not verify wallet ownership:", err);
+            if (currentRole === "admin") {
+                setWalletBlocked(true);
+                setWalletBlockedMessage(msg);
+                return false;
+            }
             setWalletBlocked(false);
             setWalletBlockedMessage(null);
             return true;
         }
-    }, []);
+    }, [bindAdminWallet]);
 
     useEffect(() => {
         const injectedProvider = getInjectedProvider();
@@ -151,7 +265,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                 if (accounts.length > 0) {
                     await checkNetwork(browserProvider);
                     const addr = accounts[0].address;
-                    const ok = await evaluateWalletOwnership(addr);
+                    const ok = await evaluateWalletOwnership(addr, browserProvider);
                     setAccount(ok ? addr : null);
                     if (!ok) {
                         toast.error("Wallet tersebut sudah digunakan. Silakan ganti akun wallet.");
@@ -161,10 +275,14 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                 setAccount(null);
             } catch (error) {
                 console.error("Gagal menyinkronkan wallet", error);
+                if (error instanceof WalletNetworkError) {
+                    setAccount(null);
+                    toast.error(error.userMessage);
+                }
             }
         };
 
-        const handleAccountsChanged = (accounts: string[]) => {
+        const handleAccountsChanged = async (accounts: string[]) => {
             const next = accounts[0] || null;
             if (!next) {
                 setAccount(null);
@@ -172,11 +290,17 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                 setWalletBlockedMessage(null);
                 return;
             }
-            // Re-evaluate when user switches accounts in MetaMask.
-            evaluateWalletOwnership(next).then((ok) => {
+            try {
+                await checkNetwork(browserProvider);
+                // Re-evaluate when user switches accounts in MetaMask.
+                const ok = await evaluateWalletOwnership(next, browserProvider);
                 setAccount(ok ? next : null);
                 if (!ok) toast.error(`Wallet tersebut sudah digunakan. Silakan ganti akun wallet.`);
-            });
+            } catch (error) {
+                console.error("Gagal memperbarui akun wallet", error);
+                setAccount(null);
+                toast.error(getRpcErrorMessage(error));
+            }
         };
 
         const handleChainChanged = async () => {
@@ -187,7 +311,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                 const accounts = await nextProvider.send("eth_accounts", []);
                 if (accounts.length > 0) {
                     await checkNetwork(nextProvider);
-                    const ok = await evaluateWalletOwnership(accounts[0]);
+                    const ok = await evaluateWalletOwnership(accounts[0], nextProvider);
                     setAccount(ok ? accounts[0] : null);
                     if (!ok) toast.error(`Wallet tersebut sudah digunakan. Silakan ganti akun wallet.`);
                 } else {
@@ -195,6 +319,8 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                 }
             } catch (error) {
                 console.error("Gagal memperbarui chain wallet", error);
+                setAccount(null);
+                toast.error(getRpcErrorMessage(error));
             }
         };
 
@@ -219,7 +345,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
             const accounts = await provider.send("eth_requestAccounts", []);
             await checkNetwork(provider);
             const next = accounts[0];
-            const ok = await evaluateWalletOwnership(next);
+            const ok = await evaluateWalletOwnership(next, provider);
             if (!ok) {
                 setAccount(null);
                 toast.error("Wallet tersebut sudah digunakan oleh akun lain.");

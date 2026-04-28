@@ -93,6 +93,15 @@ export default function LoginPage() {
                     </button>
                 </form>
 
+                <a
+                    href="https://dummy-production-9e41.up.railway.app/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full block text-center px-8 py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-semibold transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40"
+                >
+                    Buat Akun Baru
+                </a>
+
                 <p className="text-white/60">
                     <Link href="/" className="hover:text-white transition-colors">
                         &larr; Kembali ke Beranda

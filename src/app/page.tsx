@@ -3,6 +3,125 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 
+type FeatureItem = {
+  icon: string;
+  title: string;
+  desc: string;
+};
+
+type StepItem = {
+  num: string;
+  icon: string;
+  title: string;
+  desc: string;
+};
+
+type SecurityItem = {
+  color: string;
+  bg: string;
+  icon: string;
+  title: string;
+  desc: string;
+};
+
+const features: FeatureItem[] = [
+  {
+    icon: "🔗",
+    title: "Blockchain Terdesentralisasi",
+    desc: "Setiap suara dicatat secara permanen di smart contract Ethereum — tidak bisa diubah atau dihapus.",
+  },
+  {
+    icon: "🪪",
+    title: "Identitas Terverifikasi",
+    desc: "Pemilih diverifikasi melalui Verifiable Credential (VC) dan Student NFT sebelum bisa memberikan suara.",
+  },
+  {
+    icon: "🔒",
+    title: "Privasi & Keamanan",
+    desc: "Wallet address digunakan sebagai identitas voting — tidak ada data pribadi yang tersimpan di server pusat.",
+  },
+  {
+    icon: "📊",
+    title: "Hasil Real-time",
+    desc: "Hasil pemilihan dapat dipantau secara live dengan update otomatis via Socket.IO.",
+  },
+  {
+    icon: "🗂️",
+    title: "Multi Sesi Voting",
+    desc: "Admin dapat membuat beberapa sesi pemilihan sekaligus dengan kandidat dan periode yang berbeda.",
+  },
+  {
+    icon: "📜",
+    title: "Riwayat Transparan",
+    desc: "Riwayat voting setiap pengguna bisa diverifikasi lewat block explorer dengan transaction hash.",
+  },
+];
+
+const steps: StepItem[] = [
+  {
+    num: "01",
+    icon: "🔐",
+    title: "Login",
+    desc: "Masuk menggunakan NIM dan password yang diberikan oleh admin.",
+  },
+  {
+    num: "02",
+    icon: "🔗",
+    title: "Tautkan Wallet",
+    desc: "Hubungkan dompet MetaMask ke akun mahasiswamu — satu wallet untuk satu Student ID.",
+  },
+  {
+    num: "03",
+    icon: "🪙",
+    title: "Klaim NFT",
+    desc: "Klaim Student NFT sebagai bukti identitas terverifikasi agar bisa ikut voting.",
+  },
+  {
+    num: "04",
+    icon: "🗳️",
+    title: "Voting",
+    desc: "Pilih kandidat di sesi voting aktif, konfirmasi di wallet, dan suaramu tercatat selamanya.",
+  },
+];
+
+const securityItems: SecurityItem[] = [
+  {
+    color: "text-blue-400",
+    bg: "bg-blue-500/10 border-blue-500/20",
+    icon: "🪪",
+    title: "Identitas",
+    desc: "Binding wallet–Student ID dan penerbitan VC dilakukan melalui backend terautentikasi (JWT). Hanya pemilik kredensial sah yang dapat mengikat dompet dan menerima NFT.",
+  },
+  {
+    color: "text-purple-400",
+    bg: "bg-purple-500/10 border-purple-500/20",
+    icon: "🗳️",
+    title: "Suara",
+    desc: "Suara terhubung ke alamat wallet dan session ID di blockchain. Smart contract memastikan satu suara per pemilih per sesi — tidak bisa vote dua kali.",
+  },
+  {
+    color: "text-green-400",
+    bg: "bg-green-500/10 border-green-500/20",
+    icon: "🔒",
+    title: "Data",
+    desc: "Password di-hash dengan bcrypt. Token JWT digunakan untuk sesi. Jangan bagikan kredensial atau seed phrase wallet ke siapapun.",
+  },
+  {
+    color: "text-amber-400",
+    bg: "bg-amber-500/10 border-amber-500/20",
+    icon: "🎭",
+    title: "Soulbound NFT",
+    desc: "Student NFT bersifat Soulbound Token (SBT) — tidak bisa dipindahtangankan, sehingga identitas pemilih tidak bisa diperjualbelikan.",
+  },
+];
+
+const stats = [
+  { value: "100%", label: "Transparan" },
+  { value: "ERC-721", label: "Student NFT" },
+  { value: "0", label: "Server Pusat" },
+  { value: "∞", label: "Dapat Diverifikasi" },
+] as const;
+
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -14,97 +133,6 @@ export default function Home() {
     window.addEventListener("auth-change", onAuth);
     return () => window.removeEventListener("auth-change", onAuth);
   }, []);
-
-  const features = [
-    {
-      icon: "🔗",
-      title: "Blockchain Terdesentralisasi",
-      desc: "Setiap suara dicatat secara permanen di smart contract Ethereum — tidak bisa diubah atau dihapus.",
-    },
-    {
-      icon: "🪪",
-      title: "Identitas Terverifikasi",
-      desc: "Pemilih diverifikasi melalui Verifiable Credential (VC) dan Student NFT sebelum bisa memberikan suara.",
-    },
-    {
-      icon: "🔒",
-      title: "Privasi & Keamanan",
-      desc: "Wallet address digunakan sebagai identitas voting — tidak ada data pribadi yang tersimpan di server pusat.",
-    },
-    {
-      icon: "📊",
-      title: "Hasil Real-time",
-      desc: "Hasil pemilihan dapat dipantau secara live dengan update otomatis via Socket.IO.",
-    },
-    {
-      icon: "🗂️",
-      title: "Multi Sesi Voting",
-      desc: "Admin dapat membuat beberapa sesi pemilihan sekaligus dengan kandidat dan periode yang berbeda.",
-    },
-    {
-      icon: "📜",
-      title: "Riwayat Transparan",
-      desc: "Riwayat voting setiap pengguna bisa diverifikasi lewat block explorer dengan transaction hash.",
-    },
-  ];
-
-  const steps = [
-    {
-      num: "01",
-      icon: "🔐",
-      title: "Login",
-      desc: "Masuk menggunakan NIM dan password yang diberikan oleh admin.",
-    },
-    {
-      num: "02",
-      icon: "🔗",
-      title: "Tautkan Wallet",
-      desc: "Hubungkan dompet MetaMask ke akun mahasiswamu — satu wallet untuk satu Student ID.",
-    },
-    {
-      num: "03",
-      icon: "🪙",
-      title: "Klaim NFT",
-      desc: "Klaim Student NFT sebagai bukti identitas terverifikasi agar bisa ikut voting.",
-    },
-    {
-      num: "04",
-      icon: "🗳️",
-      title: "Voting",
-      desc: "Pilih kandidat di sesi voting aktif, konfirmasi di wallet, dan suaramu tercatat selamanya.",
-    },
-  ];
-
-  const securityItems = [
-    {
-      color: "text-blue-400",
-      bg: "bg-blue-500/10 border-blue-500/20",
-      icon: "🪪",
-      title: "Identitas",
-      desc: "Binding wallet–Student ID dan penerbitan VC dilakukan melalui backend terautentikasi (JWT). Hanya pemilik kredensial sah yang dapat mengikat dompet dan menerima NFT.",
-    },
-    {
-      color: "text-purple-400",
-      bg: "bg-purple-500/10 border-purple-500/20",
-      icon: "🗳️",
-      title: "Suara",
-      desc: "Suara terhubung ke alamat wallet dan session ID di blockchain. Smart contract memastikan satu suara per pemilih per sesi — tidak bisa vote dua kali.",
-    },
-    {
-      color: "text-green-400",
-      bg: "bg-green-500/10 border-green-500/20",
-      icon: "🔒",
-      title: "Data",
-      desc: "Password di-hash dengan bcrypt. Token JWT digunakan untuk sesi. Jangan bagikan kredensial atau seed phrase wallet ke siapapun.",
-    },
-    {
-      color: "text-amber-400",
-      bg: "bg-amber-500/10 border-amber-500/20",
-      icon: "🎭",
-      title: "Soulbound NFT",
-      desc: "Student NFT bersifat Soulbound Token (SBT) — tidak bisa dipindahtangankan, sehingga identitas pemilih tidak bisa diperjualbelikan.",
-    },
-  ];
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -171,12 +199,7 @@ export default function Home() {
       {/* ─── STATS STRIP ─────────────────────────────── */}
       <section className="border-y border-white/5 bg-white/[0.02] py-8 px-4">
         <div className="max-w-5xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
-          {[
-            { value: "100%", label: "Transparan" },
-            { value: "ERC-721", label: "Student NFT" },
-            { value: "0", label: "Server Pusat" },
-            { value: "∞", label: "Dapat Diverifikasi" },
-          ].map((stat) => (
+          {stats.map((stat) => (
             <div key={stat.label}>
               <p className="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
                 {stat.value}

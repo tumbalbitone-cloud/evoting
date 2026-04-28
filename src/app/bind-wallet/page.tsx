@@ -1,386 +1,509 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "../../context/WalletContext";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { clearAuth, isMockToken } from "../../utils/auth";
 import { authApiFetch } from "../../utils/api";
 import { getBlockExplorerTxUrl } from "../../utils/explorer";
+import { getRpcErrorMessage } from "../../utils/rpcError";
+
+type BindStatusTone = "neutral" | "error";
+
+type BindWalletResponse = {
+  success?: boolean;
+  error?: string;
+  vcJwt?: string;
+};
+
+type DidStatusResponse = {
+  claimed?: boolean;
+  studentId?: string;
+  nftClaimed?: boolean;
+  txHash?: string;
+  vc?: unknown;
+  vcJwt?: string;
+};
+
+function isAuthExpiredMessage(message: string) {
+  return (
+    message.includes("Tidak ada token autentikasi yang valid") ||
+    message.includes("Autentikasi gagal")
+  );
+}
 
 export default function BindWallet() {
-    const { account, isConnected, connectWallet, walletBlocked, walletBlockedMessage, isConnecting, provider } = useWallet();
-    const [chainId, setChainId] = useState<bigint | null>(null);
-    const [studentId, setStudentId] = useState<string | null>(null);
-    const [status, setStatus] = useState("");
-    const [vc, setVc] = useState<any>(null);
-    const [alreadyBound, setAlreadyBound] = useState<boolean>(false);
-    const [usedByOther, setUsedByOther] = useState<boolean>(false);
-    const [nftClaimed, setNftClaimed] = useState<boolean>(false);
-    const [txHash, setTxHash] = useState<string | null>(null);
-    const router = useRouter();
+  const {
+    account,
+    isConnected,
+    connectWallet,
+    walletBlocked,
+    walletBlockedMessage,
+    isConnecting,
+    provider,
+  } = useWallet();
+  const [chainId, setChainId] = useState<bigint | null>(null);
+  const [studentId, setStudentId] = useState<string | null>(null);
+  const [status, setStatus] = useState("");
+  const [statusTone, setStatusTone] = useState<BindStatusTone>("neutral");
+  const [vc, setVc] = useState<BindWalletResponse | null>(null);
+  const [alreadyBound, setAlreadyBound] = useState(false);
+  const [usedByOther, setUsedByOther] = useState(false);
+  const [nftClaimed, setNftClaimed] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [isBinding, setIsBinding] = useState(false);
+  const [isClaiming, setIsClaiming] = useState(false);
+  const router = useRouter();
 
-    useEffect(() => {
-        if (!provider) {
-            setChainId(null);
-            return;
+  const setNeutralStatus = useCallback((message: string) => {
+    setStatus(message);
+    setStatusTone("neutral");
+  }, []);
+
+  const setErrorStatus = useCallback((message: string) => {
+    setStatus(`Kesalahan: ${message}`);
+    setStatusTone("error");
+  }, []);
+
+  const redirectToLogin = useCallback(
+    (message?: string) => {
+      clearAuth();
+      if (message) {
+        setErrorStatus(message);
+      }
+      window.setTimeout(() => router.push("/login"), 2000);
+    },
+    [router, setErrorStatus],
+  );
+
+  useEffect(() => {
+    if (!provider) {
+      setChainId(null);
+      return;
+    }
+
+    provider
+      .getNetwork()
+      .then((network) => setChainId(network.chainId))
+      .catch(() => setChainId(null));
+  }, [provider]);
+
+  useEffect(() => {
+    const storedStudentId = localStorage.getItem("username");
+    const token = localStorage.getItem("token");
+    const role = localStorage.getItem("role");
+
+    if (!token || !storedStudentId) {
+      router.push("/login");
+      return;
+    }
+
+    if (role === "admin") {
+      toast.error("Akun admin tidak dapat menautkan wallet sebagai mahasiswa.");
+      router.push("/admin");
+      return;
+    }
+
+    if (isMockToken(token)) {
+      console.warn("Token mock lama terdeteksi. Silakan login kembali.");
+      clearAuth();
+      router.push("/login");
+      return;
+    }
+
+    setStudentId(storedStudentId);
+  }, [router]);
+
+  const resetBindingState = useCallback(() => {
+    setAlreadyBound(false);
+    setUsedByOther(false);
+    setNftClaimed(false);
+    setVc(null);
+    setTxHash(null);
+  }, []);
+
+  const checkStatus = useCallback(async () => {
+    if (!account) {
+      return;
+    }
+
+    setIsCheckingStatus(true);
+
+    try {
+      const res = await authApiFetch(`/api/did/status/${account}`);
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+
+      if (res.status === 403) {
+        resetBindingState();
+        setUsedByOther(true);
+        setErrorStatus("Wallet sudah tertaut ke akun lain.");
+        return;
+      }
+
+      const data = (await res.json()) as DidStatusResponse;
+      if (!data.claimed) {
+        resetBindingState();
+        setStatus("");
+        return;
+      }
+
+      if (data.studentId !== studentId) {
+        resetBindingState();
+        setUsedByOther(true);
+        setErrorStatus(`Wallet sudah tertaut ke NIM lain: ${data.studentId}`);
+        return;
+      }
+
+      setAlreadyBound(true);
+      setUsedByOther(false);
+
+      if (data.nftClaimed) {
+        setNftClaimed(true);
+        setVc(null);
+        setTxHash(data.txHash || null);
+        setNeutralStatus("Wallet sudah tertaut dan Student NFT sudah diklaim.");
+        return;
+      }
+
+      setNftClaimed(false);
+      setTxHash(null);
+
+      if (data.vc) {
+        setVc({ vcJwt: data.vcJwt });
+        setNeutralStatus("Wallet sudah tertaut. Silakan klaim NFT Anda.");
+        return;
+      }
+
+      setVc(null);
+      setNeutralStatus("Wallet sudah tertaut ke akun Anda.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (isAuthExpiredMessage(message)) {
+        redirectToLogin();
+        return;
+      }
+
+      setErrorStatus(getRpcErrorMessage(error));
+      console.error(error);
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  }, [
+    account,
+    redirectToLogin,
+    resetBindingState,
+    setErrorStatus,
+    setNeutralStatus,
+    studentId,
+  ]);
+
+  useEffect(() => {
+    if (account && studentId) {
+      checkStatus();
+    }
+  }, [account, studentId, checkStatus]);
+
+  const bindWallet = async () => {
+    if (!account) {
+      toast.error("Hubungkan wallet terlebih dahulu");
+      return;
+    }
+
+    if (usedByOther || walletBlocked) {
+      toast.error("Wallet tersebut sudah digunakan oleh akun lain.");
+      return;
+    }
+
+    if (!studentId) {
+      return;
+    }
+
+    if (!provider) {
+      toast.error("Provider wallet tidak tersedia. Coba hubungkan ulang MetaMask.");
+      return;
+    }
+
+    setNeutralStatus("Meminta persetujuan tanda tangan wallet...");
+    setIsBinding(true);
+
+    try {
+      const challengeRes = await authApiFetch("/api/did/bind/challenge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ studentId, userAddress: account }),
+      });
+
+      if (!challengeRes.ok) {
+        const errorData = (await challengeRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+
+        if (challengeRes.status === 401) {
+          redirectToLogin("Sesi berakhir. Mengalihkan ke halaman login...");
+          return;
         }
-        provider.getNetwork().then((n) => setChainId(n.chainId)).catch(() => setChainId(null));
-    }, [provider]);
 
-    useEffect(() => {
-        // Get user info from localStorage
-        const storedStudentId = localStorage.getItem("username");
-        const token = localStorage.getItem("token");
-        const role = localStorage.getItem("role");
+        throw new Error(errorData.error || `HTTP error! status: ${challengeRes.status}`);
+      }
 
-        if (!token || !storedStudentId) {
-            router.push("/login");
-            return;
+      const challengeData = (await challengeRes.json()) as {
+        success?: boolean;
+        challengeToken?: string;
+        message?: string;
+      };
+      if (!challengeData.success || !challengeData.challengeToken || !challengeData.message) {
+        throw new Error("Challenge wallet tidak valid. Silakan coba lagi.");
+      }
+
+      const signer = await provider.getSigner();
+      const signerAddress = await signer.getAddress();
+      if (signerAddress.toLowerCase() !== account.toLowerCase()) {
+        throw new Error("Wallet aktif berubah. Silakan hubungkan ulang wallet yang ingin ditautkan.");
+      }
+
+      const signature = await signer.signMessage(challengeData.message);
+      setNeutralStatus("Memverifikasi tanda tangan wallet...");
+
+      const res = await authApiFetch("/api/did/bind", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          studentId,
+          userAddress: account,
+          signature,
+          challengeToken: challengeData.challengeToken,
+        }),
+      });
+
+      const data = (await res.json()) as BindWalletResponse;
+      if (!res.ok) {
+        if (res.status === 401) {
+          redirectToLogin("Sesi berakhir. Mengalihkan ke halaman login...");
+          return;
         }
 
-        // Admin accounts are not student identities — block DID student flow.
-        if (role === "admin") {
-            toast.error("Akun admin tidak dapat menautkan wallet sebagai mahasiswa.");
-            router.push("/admin");
-            return;
-        }
+        throw new Error(data.error || `HTTP error! status: ${res.status}`);
+      }
 
-        // Check if token is old mock token
-        if (isMockToken(token)) {
-            console.warn("Token mock lama terdeteksi. Silakan login kembali.");
-            clearAuth();
-            router.push("/login");
-            return;
-        }
+      if (!data.success) {
+        throw new Error(data.error || "Gagal menautkan wallet");
+      }
 
-        setStudentId(storedStudentId);
-    }, [router]);
+      setVc(data);
+      setAlreadyBound(true);
+      setUsedByOther(false);
+      setNeutralStatus("Berhasil! Wallet tertaut ke akun mahasiswa.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Gagal menautkan wallet";
+      if (isAuthExpiredMessage(message)) {
+        redirectToLogin("Silakan login kembali. Sesi Anda sudah berakhir.");
+        return;
+      }
 
-    const checkStatus = useCallback(async () => {
-        if (!account) return;
+      setErrorStatus(getRpcErrorMessage(err) || message);
+      console.error("Kesalahan saat menautkan wallet:", err);
+    } finally {
+      setIsBinding(false);
+    }
+  };
 
-        try {
-            const res = await authApiFetch(`/api/did/status/${account}`);
-            if (res.status === 401) {
-                // Refresh juga gagal — perlu login ulang
-                clearAuth();
-                router.push("/login");
-                return;
-            }
-            if (res.status === 403) {
-                setStatus("Wallet sudah tertaut ke akun lain.");
-                setAlreadyBound(false);
-                setUsedByOther(true);
-                setNftClaimed(false);
-                setVc(null);
-                return;
-            }
-            const data = await res.json();
-            if (data.claimed) {
-                if (data.studentId === studentId) {
-                    setAlreadyBound(true);
-                    setUsedByOther(false);
+  const registerForElection = async () => {
+    if (!vc?.vcJwt || !account) {
+      return;
+    }
 
-                    if (data.nftClaimed) {
-                        setNftClaimed(true);
-                        setTxHash(data.txHash || null);
-                        setStatus("Wallet sudah tertaut dan Student NFT sudah diklaim.");
-                    } else {
-                        if (data.vc) {
-                            setVc(data);
-                            setStatus("Wallet sudah tertaut. Silakan klaim NFT Anda.");
-                        } else {
-                            setStatus("Wallet sudah tertaut ke akun Anda.");
-                        }
-                    }
-                } else {
-                    setStatus(`Wallet sudah tertaut ke NIM lain: ${data.studentId}`);
-                    setAlreadyBound(false);
-                    setUsedByOther(true);
-                }
-            } else {
-                setAlreadyBound(false);
-                setUsedByOther(false);
-                setNftClaimed(false);
-                setVc(null);
-            }
-        } catch (error: any) {
-            // authApiFetch melempar error ketika token + refresh keduanya gagal
-            if (
-                error?.message?.includes("Tidak ada token autentikasi yang valid") ||
-                error?.message?.includes("Autentikasi gagal")
-            ) {
-                clearAuth();
-                router.push("/login");
-            } else {
-                console.error(error);
-            }
-        }
-    }, [account, router, studentId]);
+    setNeutralStatus("Memverifikasi & menerbitkan Student NFT...");
+    setIsClaiming(true);
 
-    useEffect(() => {
-        if (account && studentId) {
-            checkStatus();
-        }
-    }, [account, studentId, checkStatus]);
+    try {
+      const res = await authApiFetch("/api/did/verify-and-register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userAddress: account,
+          vcJwt: vc.vcJwt,
+        }),
+      });
 
-    const bindWallet = async () => {
-        if (!account) {
-            toast.error("Hubungkan wallet terlebih dahulu");
-            return;
-        }
-        if (usedByOther || walletBlocked) {
-            toast.error("Wallet tersebut sudah digunakan oleh akun lain.");
-            return;
-        }
-        if (!studentId) return;
-        if (!provider) {
-            toast.error("Provider wallet tidak tersedia. Coba hubungkan ulang MetaMask.");
-            return;
-        }
+      if (!res.ok) {
+        const errorData = (await res.json().catch(() => ({
+          error: `HTTP ${res.status} error`,
+        }))) as { error?: string };
+        console.error("Register election error:", errorData, "Status:", res.status);
+        throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
+      }
 
-        setStatus("Meminta persetujuan tanda tangan wallet...");
+      const data = (await res.json()) as { success?: boolean; error?: string; txHash?: string };
+      if (!data.success) {
+        throw new Error(data.error || "Gagal verifikasi dan pendaftaran");
+      }
 
-        try {
-            const challengeRes = await authApiFetch("/api/did/bind/challenge", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ studentId, userAddress: account }),
-            });
+      setTxHash(data.txHash || null);
+      setNftClaimed(true);
+      setVc(null);
+      setNeutralStatus("Berhasil! Student NFT berhasil diklaim.");
+      window.setTimeout(() => router.push("/vote"), 4000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Gagal mendaftar";
+      if (isAuthExpiredMessage(message)) {
+        redirectToLogin("Sesi berakhir. Silakan login kembali.");
+        return;
+      }
 
-            if (!challengeRes.ok) {
-                const errorData = await challengeRes.json().catch(() => ({}));
-                if (challengeRes.status === 401) {
-                    clearAuth();
-                    setStatus("Kesalahan: Sesi berakhir. Mengalihkan ke halaman login...");
-                    setTimeout(() => {
-                        router.push("/login");
-                    }, 2000);
-                    return;
-                }
-                throw new Error(errorData.error || `HTTP error! status: ${challengeRes.status}`);
-            }
+      setErrorStatus(getRpcErrorMessage(err) || message);
+      console.error("Kesalahan pendaftaran:", err);
+    } finally {
+      setIsClaiming(false);
+    }
+  };
 
-            const challengeData = await challengeRes.json();
-            if (!challengeData.success || !challengeData.challengeToken || !challengeData.message) {
-                throw new Error("Challenge wallet tidak valid. Silakan coba lagi.");
-            }
-
-            const signer = await provider.getSigner();
-            const signerAddress = await signer.getAddress();
-            if (signerAddress.toLowerCase() !== account.toLowerCase()) {
-                throw new Error("Wallet aktif berubah. Silakan hubungkan ulang wallet yang ingin ditautkan.");
-            }
-
-            const signature = await signer.signMessage(challengeData.message);
-
-            setStatus("Memverifikasi tanda tangan wallet...");
-
-            const res = await authApiFetch("/api/did/bind", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    studentId,
-                    userAddress: account,
-                    signature,
-                    challengeToken: challengeData.challengeToken,
-                }),
-            });
-
-            const data = await res.json();
-            if (!res.ok) {
-                if (res.status === 401) {
-                    clearAuth();
-                    setStatus("Kesalahan: Sesi berakhir. Mengalihkan ke halaman login...");
-                    setTimeout(() => {
-                        router.push("/login");
-                    }, 2000);
-                    return;
-                }
-                throw new Error(data.error || `HTTP error! status: ${res.status}`);
-            }
-
-            if (!data.success) {
-                throw new Error(data.error || "Gagal menautkan wallet");
-            }
-
-            // Store VC data (both vc object and vcJwt)
-            setVc(data);
-            setAlreadyBound(true);
-            setStatus("Berhasil! Wallet tertaut ke akun mahasiswa.");
-        } catch (err: any) {
-            const msg = err?.message || "Gagal menautkan wallet";
-            if (
-                msg.includes("Tidak ada token autentikasi yang valid") ||
-                msg.includes("Autentikasi gagal")
-            ) {
-                setStatus("Kesalahan: Silakan login kembali. Sesi Anda sudah berakhir.");
-                clearAuth();
-                setTimeout(() => router.push("/login"), 2000);
-                return;
-            }
-            setStatus("Kesalahan: " + msg);
-            console.error("Kesalahan saat menautkan wallet:", err);
-        }
-    };
-
-    const registerForElection = async () => {
-        if (!vc || !account) return;
-        setStatus("Memverifikasi & menerbitkan Student NFT...");
-
-        try {
-            if (!vc.vcJwt) {
-                throw new Error("JWT Verifiable Credential tidak ditemukan. Silakan tautkan wallet lagi.");
-            }
-
-            const res = await authApiFetch("/api/did/verify-and-register", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    userAddress: account,
-                    vcJwt: vc.vcJwt,
-                }),
-            });
-
-            if (!res.ok) {
-                let errorData: { error?: string };
-                try {
-                    errorData = await res.json();
-                } catch {
-                    errorData = { error: `HTTP ${res.status} error` };
-                }
-                console.error("Register election error:", errorData, "Status:", res.status);
-                throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
-            }
-
-            const data = await res.json();
-            if (!data.success) {
-                throw new Error(data.error || "Gagal verifikasi dan pendaftaran");
-            }
-
-            setTxHash(data.txHash || null);
-            setStatus("Berhasil! Student NFT berhasil diklaim.");
-            setNftClaimed(true);
-            setVc(null);
-            setTimeout(() => router.push("/vote"), 4000);
-        } catch (err: any) {
-            const msg = err?.message || "Gagal mendaftar";
-            if (
-                msg.includes("Tidak ada token autentikasi yang valid") ||
-                msg.includes("Autentikasi gagal")
-            ) {
-                clearAuth();
-                setStatus("Kesalahan: Sesi berakhir. Silakan login kembali.");
-                setTimeout(() => router.push("/login"), 2000);
-                return;
-            }
-            setStatus("Kesalahan: " + msg);
-            console.error("Kesalahan pendaftaran:", err);
-        }
-    };
-
-    if (!studentId) return <div className="min-h-screen flex items-center justify-center text-white">Memuat...</div>;
-
+  if (!studentId) {
     return (
-        <div className="min-h-screen bg-dark-900 pt-20 px-4">
-            <div className="max-w-md mx-auto bg-white/5 p-8 rounded-2xl backdrop-blur-xl border border-white/10 text-center">
-                <h1 className="text-2xl font-bold mb-6 text-white">Hubungkan Wallet</h1>
-
-                <div className="mb-6 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
-                    <p className="text-sm text-blue-200 uppercase tracking-wider mb-1">Login sebagai</p>
-                    <p className="text-xl font-mono text-white">{studentId}</p>
-                </div>
-
-                {!isConnected ? (
-                    <div className="space-y-4">
-                        <p className="text-white/60">Hubungkan wallet Ethereum Anda untuk ditautkan ke akun mahasiswa.</p>
-                        <button
-                            onClick={connectWallet}
-                            disabled={walletBlocked || isConnecting}
-                            className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold transition"
-                        >
-                            {isConnecting ? "Menghubungkan..." : "Hubungkan Wallet"}
-                        </button>
-                        {(walletBlockedMessage || status.includes("Wallet sudah tertaut ke NIM lain")) && (
-                            <div className="p-3 rounded-lg text-sm bg-red-500/20 text-red-200 border border-red-500/30">
-                                {walletBlockedMessage || status}
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        <div className="p-3 bg-black/40 rounded-lg text-sm font-mono text-white/80 break-all border border-white/5">
-                            {account}
-                        </div>
-
-                        {!alreadyBound && !vc && !nftClaimed && !usedByOther && !walletBlocked && (
-                            <button
-                                onClick={bindWallet}
-                                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition shadow-lg shadow-blue-600/20"
-                            >
-                                Hubungkan Wallet
-                            </button>
-                        )}
-                        {(usedByOther || walletBlocked) && (
-                            <div className="p-4 bg-red-500/20 text-red-200 rounded-xl border border-red-500/30">
-                                {walletBlockedMessage || status || "Wallet tersebut sudah digunakan oleh akun lain."}
-                            </div>
-                        )}
-
-                        {nftClaimed && (
-                            <div className="p-4 bg-purple-500/20 text-purple-200 rounded-xl border border-purple-500/30 space-y-2">
-                                <div className="font-semibold px-2 py-1">✓ NFT Sudah Diklaim</div>
-                                {txHash && (
-                                    <div className="text-xs bg-black/40 p-2 rounded-lg border border-purple-500/20 font-mono flex flex-col items-center gap-1.5">
-                                        <span className="text-purple-300">Hash Transaksi:</span>
-                                        <a
-                                            href={getBlockExplorerTxUrl(txHash, chainId)}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-blue-400 hover:text-blue-300 underline break-all inline-block px-1"
-                                        >
-                                            {txHash}
-                                        </a>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {alreadyBound && !vc && !nftClaimed && (
-                            <div className="p-4 bg-green-500/20 text-green-200 rounded-xl border border-green-500/30">
-                                ✓ Wallet Sudah terhubung
-                            </div>
-                        )}
-
-                        {vc && !nftClaimed && (
-                            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="p-4 bg-green-500/20 text-green-200 rounded-xl border border-green-500/30">
-                                    ✓ Wallet Berhasil Dihubungkan
-                                </div>
-                                <button
-                                    onClick={registerForElection}
-                                    className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-lg shadow-purple-600/20"
-                                >
-                                    Klaim NFT (Wajib untuk Voting)
-                                </button>
-                            </div>
-                        )}
-
-                        {status && (
-                            <div className={`mt-4 p-3 rounded-lg text-sm ${status.includes("Kesalahan") ? "bg-red-500/20 text-red-200" : "bg-white/10 text-white"}`}>
-                                {status}
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-white shadow-xl backdrop-blur-xl">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-blue-400" />
+          <p className="text-sm text-white/80">Memuat identitas akun dan status wallet...</p>
         </div>
+      </div>
     );
+  }
+
+  const showBindButton =
+    !alreadyBound && !vc && !nftClaimed && !usedByOther && !walletBlocked;
+  const showWalletConflict = usedByOther || walletBlocked;
+
+  return (
+    <div className="min-h-screen bg-dark-900 pt-20 px-4">
+      <div className="max-w-md mx-auto bg-white/5 p-8 rounded-2xl backdrop-blur-xl border border-white/10 text-center">
+        <h1 className="text-2xl font-bold mb-6 text-white">Hubungkan Wallet</h1>
+
+        <div className="mb-6 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
+          <p className="text-sm text-blue-200 uppercase tracking-wider mb-1">Login sebagai</p>
+          <p className="text-xl font-mono text-white">{studentId}</p>
+        </div>
+
+        {!isConnected ? (
+          <div className="space-y-4">
+            <p className="text-white/60">
+              Hubungkan wallet Ethereum Anda untuk ditautkan ke akun mahasiswa.
+            </p>
+            <button
+              onClick={connectWallet}
+              disabled={walletBlocked || isConnecting}
+              className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold transition"
+            >
+              {isConnecting ? "Menghubungkan..." : "Hubungkan Wallet"}
+            </button>
+            {(walletBlockedMessage || showWalletConflict) && (
+              <div className="p-3 rounded-lg text-sm bg-red-500/20 text-red-200 border border-red-500/30">
+                {walletBlockedMessage || status}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="p-3 bg-black/40 rounded-lg text-sm font-mono text-white/80 break-all border border-white/5">
+              {account}
+            </div>
+
+            {isCheckingStatus && (
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+                Memeriksa apakah wallet ini sudah tertaut dan siap digunakan...
+              </div>
+            )}
+
+            {showBindButton && (
+              <button
+                onClick={bindWallet}
+                disabled={isBinding || isCheckingStatus}
+                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition shadow-lg shadow-blue-600/20 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isBinding ? "Memproses Tautan Wallet..." : "Hubungkan Wallet"}
+              </button>
+            )}
+
+            {showWalletConflict && (
+              <div className="p-4 bg-red-500/20 text-red-200 rounded-xl border border-red-500/30">
+                {walletBlockedMessage || status || "Wallet tersebut sudah digunakan oleh akun lain."}
+              </div>
+            )}
+
+            {nftClaimed && (
+              <div className="p-4 bg-purple-500/20 text-purple-200 rounded-xl border border-purple-500/30 space-y-2">
+                <div className="font-semibold px-2 py-1">✓ NFT Sudah Diklaim</div>
+                {txHash && (
+                  <div className="text-xs bg-black/40 p-2 rounded-lg border border-purple-500/20 font-mono flex flex-col items-center gap-1.5">
+                    <span className="text-purple-300">Hash Transaksi:</span>
+                    <a
+                      href={getBlockExplorerTxUrl(txHash, chainId)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 underline break-all inline-block px-1"
+                    >
+                      {txHash}
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {alreadyBound && !vc && !nftClaimed && (
+              <div className="p-4 bg-green-500/20 text-green-200 rounded-xl border border-green-500/30">
+                ✓ Wallet Sudah terhubung
+              </div>
+            )}
+
+            {vc && !nftClaimed && (
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                <div className="p-4 bg-green-500/20 text-green-200 rounded-xl border border-green-500/30">
+                  ✓ Wallet Berhasil Dihubungkan
+                </div>
+                <button
+                  onClick={registerForElection}
+                  disabled={isClaiming}
+                  className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-lg shadow-purple-600/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isClaiming ? "Memverifikasi dan Menerbitkan NFT..." : "Klaim NFT (Wajib untuk Voting)"}
+                </button>
+              </div>
+            )}
+
+            {status && (
+              <div
+                className={`mt-4 rounded-lg border p-3 text-sm ${
+                  statusTone === "error"
+                    ? "border-red-500/30 bg-red-500/20 text-red-200"
+                    : "border-white/10 bg-white/10 text-white"
+                }`}
+              >
+                {status}
+              </div>
+            )}
+
+            {statusTone === "error" && (
+              <button
+                onClick={checkStatus}
+                disabled={isCheckingStatus}
+                className="w-full rounded-xl border border-white/15 bg-white/5 py-3 text-white font-semibold transition hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isCheckingStatus ? "Memeriksa Ulang..." : "Coba Periksa Status Lagi"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
