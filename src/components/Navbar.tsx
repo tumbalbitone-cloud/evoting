@@ -80,12 +80,11 @@ const Navbar = () => {
   const [username, setUsername] = React.useState<string | null>(null);
 
   const syncAuthState = React.useCallback(() => {
-    const token = localStorage.getItem("token");
-    const storedUsername = localStorage.getItem("username");
     const role = localStorage.getItem("role");
+    const storedUsername = localStorage.getItem("username");
 
     setUsername(storedUsername);
-    setIsLoggedIn(Boolean(token && storedUsername));
+    setIsLoggedIn(Boolean(role && storedUsername));
     setIsAdmin(role === "admin");
   }, []);
 

@@ -113,9 +113,8 @@ export default function AdminPage() {
 
     useEffect(() => {
         if (adminGate !== "ok") return;
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         const socket = io(getApiBaseUrl(), {
-            auth: token ? { token } : {},
+            withCredentials: true,
         });
         socket.on("connect", () => {
             console.log("🟢 Admin terhubung ke pembaruan real-time");

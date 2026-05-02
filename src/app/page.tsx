@@ -126,12 +126,16 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    setIsLoggedIn(!!token);
+    const checkAuth = () => {
+      const role = localStorage.getItem("role");
+      const username = localStorage.getItem("username");
+      setIsLoggedIn(!!(role && username));
+    };
 
-    const onAuth = () => setIsLoggedIn(!!localStorage.getItem("token"));
-    window.addEventListener("auth-change", onAuth);
-    return () => window.removeEventListener("auth-change", onAuth);
+    checkAuth();
+
+    window.addEventListener("auth-change", checkAuth);
+    return () => window.removeEventListener("auth-change", checkAuth);
   }, []);
 
   return (

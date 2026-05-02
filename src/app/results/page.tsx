@@ -256,9 +256,8 @@ export default function ResultsPage() {
 
     // ── Real-time updates via Socket.io ────────────────────────────────────
     useEffect(() => {
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         const socket = io(getApiBaseUrl(), {
-            auth: token ? { token } : {},
+            withCredentials: true,
         });
 
         const join = () => {

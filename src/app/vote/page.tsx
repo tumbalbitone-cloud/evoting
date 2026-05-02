@@ -175,9 +175,8 @@ export default function VotePage() {
     // REAL-TIME UPDATES VIA SOCKET.IO
     // ---------------------------------------------------------
     useEffect(() => {
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         const socket = io(getApiBaseUrl(), {
-            auth: token ? { token } : {},
+            withCredentials: true,
         });
 
         const join = () => {
