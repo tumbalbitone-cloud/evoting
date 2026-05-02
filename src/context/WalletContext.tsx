@@ -5,7 +5,7 @@ import { ethers, BrowserProvider } from "ethers";
 import toast from "react-hot-toast";
 import { getRpcErrorMessage } from "../utils/rpcError";
 import { authApiFetch } from "../utils/api";
-import { getValidToken } from "../utils/auth";
+import { getStoredUsername, getStoredRole } from "../utils/auth";
 
 interface WalletContextType {
     account: string | null;
@@ -186,10 +186,9 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         // Allow wallet connection but don't block.
         if (typeof window === "undefined") return true;
 
-        const token = getValidToken();
-        const currentStudentId = localStorage.getItem("username");
-        const currentRole = localStorage.getItem("role");
-        if (!token || !currentStudentId) {
+        const currentUsername = getStoredUsername();
+        const currentRole = getStoredRole();
+        if (!currentUsername) {
             setWalletBlocked(false);
             setWalletBlockedMessage(null);
             return true;
@@ -224,7 +223,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
             const usedByOther =
                 !!data?.claimed &&
                 !!data?.studentId &&
-                String(data.studentId) !== String(currentStudentId);
+                String(data.studentId) !== String(currentUsername);
 
             if (usedByOther) {
                 const msg = `Wallet tersebut sudah digunakan (tertaut ke NIM lain: ${data.studentId}). Silakan ganti akun wallet.`;

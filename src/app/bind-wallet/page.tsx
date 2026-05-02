@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "../../context/WalletContext";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { clearAuth, isMockToken } from "../../utils/auth";
+import { clearAuth, getStoredUsername, getStoredRole } from "../../utils/auth";
 import { authApiFetch } from "../../utils/api";
 import { getBlockExplorerTxUrl } from "../../utils/explorer";
 import { getRpcErrorMessage } from "../../utils/rpcError";
@@ -91,11 +91,10 @@ export default function BindWallet() {
   }, [provider]);
 
   useEffect(() => {
-    const storedStudentId = localStorage.getItem("username");
-    const token = localStorage.getItem("token");
-    const role = localStorage.getItem("role");
+    const storedStudentId = getStoredUsername();
+    const role = getStoredRole();
 
-    if (!token || !storedStudentId) {
+    if (!storedStudentId) {
       router.push("/login");
       return;
     }
@@ -103,13 +102,6 @@ export default function BindWallet() {
     if (role === "admin") {
       toast.error("Akun admin tidak dapat menautkan wallet sebagai mahasiswa.");
       router.push("/admin");
-      return;
-    }
-
-    if (isMockToken(token)) {
-      console.warn("Token mock lama terdeteksi. Silakan login kembali.");
-      clearAuth();
-      router.push("/login");
       return;
     }
 

@@ -29,11 +29,12 @@ import type {
 } from "../../components/admin/types";
 
 export default function AdminPage() {
-    const { provider, isConnected } = useWallet();
+    const { provider, account, connectWallet, isConnected } = useWallet();
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [allowlistBusy, setAllowlistBusy] = useState(false);
     const [activeTab, setActiveTab] = useState<AdminTab>("monitor");
+    const [adminWallet, setAdminWallet] = useState<string | null>(null);
 
     const [sessionName, setSessionName] = useState("");
     const [sessionDesc, setSessionDesc] = useState("");
@@ -95,6 +96,7 @@ export default function AdminPage() {
                     router.push("/login");
                     return;
                 }
+                setAdminWallet(data.claimedBy || null);
                 setAdminGate("ok");
             } catch (err) {
                 console.error("Admin gate check failed:", err);
@@ -480,13 +482,16 @@ export default function AdminPage() {
         setLoading(false);
     };
 
-    const handleCreateAdmin = async (username: string, name: string, password: string) => {
+    const handleCreateAdmin = async (username: string, name: string, password: string, walletAddress: string) => {
         setLoading(true);
         try {
+            const bodyData = walletAddress 
+                ? { username, name, password, walletAddress }
+                : { username, name, password };
             const res = await authApiFetch("/api/users/create-admin", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, name, password }),
+                body: JSON.stringify(bodyData),
             });
             const data = await res.json();
             if (!res.ok || !data.success) {
@@ -497,6 +502,34 @@ export default function AdminPage() {
             const msg = err instanceof Error ? err.message : "Gagal membuat admin";
             toast.error(msg);
             throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleBindAdminWallet = async () => {
+        if (!account) {
+            connectWallet();
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await authApiFetch("/api/users/bind-admin-wallet", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ walletAddress: account }),
+            });
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Gagal menautkan wallet admin");
+            }
+
+            toast.success("Wallet berhasil ditautkan. Anda kini memiliki hak Admin di blockchain!");
+            setAdminWallet(account);
+        } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : "Gagal menautkan wallet");
         } finally {
             setLoading(false);
         }
@@ -570,6 +603,22 @@ export default function AdminPage() {
                 <h1 className="text-2xl sm:text-3xl font-bold text-center bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
                     Dasbor Admin
                 </h1>
+
+                {!adminWallet && (
+                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-yellow-200/90 text-sm">
+                            <strong className="block text-yellow-500 font-bold mb-1">Perhatian: Wallet Belum Ditautkan</strong>
+                            Akun admin Anda belum memiliki akses ke Smart Contract. Anda tidak bisa membuat sesi pemilihan.
+                        </div>
+                        <button
+                            onClick={handleBindAdminWallet}
+                            disabled={loading || allowlistBusy}
+                            className="shrink-0 px-5 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg text-sm font-semibold transition"
+                        >
+                            {!account ? "Hubungkan MetaMask" : "Tautkan Wallet Aktif"}
+                        </button>
+                    </div>
+                )}
 
                 <AdminTabBar activeTab={activeTab} onTabChange={setActiveTab} />
 

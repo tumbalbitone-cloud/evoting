@@ -7,7 +7,8 @@ import { ethers } from "ethers";
 import VotingArtifact from "../../contracts/VotingSystem.json";
 import Link from "next/link";
 import { authApiFetch } from "../../utils/api";
-import { getValidToken, isTokenExpired } from "../../utils/auth";
+import { getStoredUsername, getStoredRole, clearAuth, isTokenExpired } from "../../utils/auth";
+import { publicApiFetch } from "../../utils/api";
 
 export default function ProfilePage() {
     const [username, setUsername] = useState<string | null>(null);
@@ -24,11 +25,12 @@ export default function ProfilePage() {
     const router = useRouter();
 
     useEffect(() => {
-        const token = getValidToken();
-        const storedUsername = localStorage.getItem("username");
-        const storedRole = localStorage.getItem("role");
+        const storedUsername = getStoredUsername();
+        const storedRole = getStoredRole();
 
-        if (!token || !storedUsername || isTokenExpired(token)) {
+        // If no stored username, user is not logged in — redirect to login.
+        // The actual token validity is enforced by the backend (httpOnly cookie).
+        if (!storedUsername) {
             router.push("/login");
             return;
         }
@@ -59,13 +61,17 @@ export default function ProfilePage() {
         checkNft();
     }, [account, provider]);
 
-    const handleLogout = () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("refreshToken");
-        localStorage.removeItem("role");
-        localStorage.removeItem("username");
-        window.dispatchEvent(new Event("auth-change"));
-        router.push("/");
+    const handleLogout = async () => {
+        try {
+            // Ask the backend to invalidate the refresh token in DB and clear cookies
+            await publicApiFetch("/api/auth/logout", { method: "POST" });
+        } catch {
+            // Even if the request fails, proceed with client-side cleanup
+        } finally {
+            clearAuth(); // clears role + username from localStorage
+            window.dispatchEvent(new Event("auth-change"));
+            router.push("/");
+        }
     };
 
     const handleChangePassword = async (e: React.FormEvent) => {

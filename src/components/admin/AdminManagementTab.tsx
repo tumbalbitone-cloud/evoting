@@ -7,7 +7,7 @@ export function AdminManagementTab({
     onCreateAdmin,
     loading,
 }: {
-    onCreateAdmin: (username: string, name: string, password: string) => Promise<void>;
+    onCreateAdmin: (username: string, name: string, password: string, walletAddress: string) => Promise<void>;
     loading: boolean;
 }) {
     const [adminList, setAdminList] = useState<AdminAccount[]>([]);
@@ -19,6 +19,7 @@ export function AdminManagementTab({
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
+    const [walletAddress, setWalletAddress] = useState("");
     const [formError, setFormError] = useState<string | null>(null);
     const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
@@ -61,12 +62,13 @@ export function AdminManagementTab({
         }
 
         try {
-            await onCreateAdmin(username.trim(), name.trim(), password);
+            await onCreateAdmin(username.trim(), name.trim(), password, walletAddress.trim());
             setFormSuccess(`Admin "${name.trim()}" berhasil ditambahkan`);
             setUsername("");
             setName("");
             setPassword("");
             setConfirmPassword("");
+            setWalletAddress("");
             fetchAdmins();
         } catch (err: unknown) {
             setFormError(err instanceof Error ? err.message : "Gagal membuat admin");
@@ -164,6 +166,21 @@ export function AdminManagementTab({
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             className="w-full bg-dark-800 border border-gray-700 rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500 text-white text-sm transition-colors"
                         />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                            Wallet Address (Opsional)
+                        </label>
+                        <input
+                            type="text"
+                            id="new-admin-wallet"
+                            placeholder="0x..."
+                            value={walletAddress}
+                            onChange={(e) => setWalletAddress(e.target.value)}
+                            className="w-full bg-dark-800 border border-gray-700 rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500 text-white text-sm transition-colors"
+                        />
+                        <p className="text-[10px] text-gray-500 mt-1">Dibutuhkan jika admin ini akan membuat sesi pemilihan di blockchain.</p>
                     </div>
                 </div>
 

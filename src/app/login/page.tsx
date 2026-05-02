@@ -25,13 +25,11 @@ export default function LoginPage() {
 
             const data = await res.json();
 
-            if (res.ok && data.success && data.token) {
-                localStorage.setItem("token", data.token);
-                if (data.refreshToken) {
-                    localStorage.setItem("refreshToken", data.refreshToken);
-                }
+            if (res.ok && data.success) {
+                // Tokens are set as httpOnly cookies by the backend — no localStorage!
+                // Only store non-sensitive UI state.
                 localStorage.setItem("role", data.role);
-                localStorage.setItem("username", data.username || data.studentId);
+                localStorage.setItem("username", data.username || data.studentId || "");
                 window.dispatchEvent(new Event("auth-change"));
 
                 if (data.role === "admin") {
