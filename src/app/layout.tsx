@@ -15,6 +15,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+try {
+  var until = Number(localStorage.getItem("wallet-bind-return-until") || "0");
+  if (location.pathname === "/" && until > Date.now()) {
+    history.replaceState(null, "", "/bind-wallet");
+  }
+} catch (_) {}
+`,
+          }}
+        />
+      </head>
       <body className="min-h-screen bg-dark-900 text-white selection:bg-blue-500/30">
         <Providers>
           <Navbar />

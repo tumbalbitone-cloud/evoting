@@ -8,6 +8,7 @@ import { clearAuth, getStoredUsername, getStoredRole } from "../../utils/auth";
 import { authApiFetch } from "../../utils/api";
 import { getBlockExplorerTxUrl } from "../../utils/explorer";
 import { getRpcErrorMessage } from "../../utils/rpcError";
+import { clearWalletBindReturn, markWalletBindReturn } from "../../utils/walletBindReturn";
 
 type BindStatusTone = "neutral" | "error";
 
@@ -261,8 +262,10 @@ export default function BindWallet() {
         throw new Error("Wallet aktif berubah. Silakan hubungkan ulang wallet yang ingin ditautkan.");
       }
 
+      markWalletBindReturn();
       const signature = await signer.signMessage(challengeData.message);
       setNeutralStatus("Memverifikasi tanda tangan wallet...");
+      clearWalletBindReturn();
 
       const res = await authApiFetch("/api/did/bind", {
         method: "POST",
@@ -305,6 +308,7 @@ export default function BindWallet() {
       setErrorStatus(getRpcErrorMessage(err) || message);
       console.error("Kesalahan saat menautkan wallet:", err);
     } finally {
+      clearWalletBindReturn();
       setIsBinding(false);
     }
   }, [
