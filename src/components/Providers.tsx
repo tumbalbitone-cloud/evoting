@@ -1,11 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
 import { Toaster } from "react-hot-toast";
 import { WalletProvider } from "@/context/WalletContext";
-import { hasWalletBindIntent } from "@/utils/walletBindIntent";
 
 const toasterOptions = {
   duration: 4000,
@@ -23,15 +20,6 @@ const toasterOptions = {
 } as const;
 
 export function Providers({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (pathname === "/" && hasWalletBindIntent()) {
-      router.replace("/bind-wallet");
-    }
-  }, [pathname, router]);
-
   return (
     <WalletProvider>
       {children}
