@@ -27,7 +27,7 @@ export function Providers({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    if (pathname !== "/bind-wallet" && hasWalletBindIntent()) {
+    if (pathname === "/" && hasWalletBindIntent()) {
       router.replace("/bind-wallet");
     }
   }, [pathname, router]);

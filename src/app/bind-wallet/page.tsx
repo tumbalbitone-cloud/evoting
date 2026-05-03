@@ -11,7 +11,7 @@ import { getRpcErrorMessage, isWalletRequestRejected } from "../../utils/rpcErro
 import {
   clearWalletBindIntent,
   getWalletBindIntent,
-  hasWalletBindIntent,
+  hasSignedWalletBindIntent,
   setWalletBindIntent,
 } from "../../utils/walletBindIntent";
 
@@ -330,6 +330,8 @@ export default function BindWallet() {
 
       if (isWalletRequestRejected(err)) {
         clearWalletBindIntent();
+      } else {
+        clearWalletBindIntent();
       }
 
       setErrorStatus(getRpcErrorMessage(err) || message);
@@ -374,7 +376,12 @@ export default function BindWallet() {
       return;
     }
 
-    if (!hasWalletBindIntent()) {
+    const savedIntent = getWalletBindIntent();
+    if (
+      !hasSignedWalletBindIntent() ||
+      savedIntent?.studentId !== studentId ||
+      savedIntent?.walletAddress?.toLowerCase() !== account.toLowerCase()
+    ) {
       return;
     }
 

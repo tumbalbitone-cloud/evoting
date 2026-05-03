@@ -67,3 +67,8 @@ export const clearWalletBindIntent = () => {
 };
 
 export const hasWalletBindIntent = () => !!getWalletBindIntent();
+
+export const hasSignedWalletBindIntent = () => {
+  const intent = getWalletBindIntent();
+  return !!intent?.studentId && !!intent?.walletAddress && !!intent?.challengeToken && !!intent?.signature;
+};
