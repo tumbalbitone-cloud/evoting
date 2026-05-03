@@ -137,7 +137,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         const statusRes = await authApiFetch(`/api/did/admin-wallet/status/${address}`);
         if (statusRes.ok) {
             const statusData = await statusRes.json().catch(() => ({}));
-            if (statusData?.matches) {
+            if (statusData?.matches && statusData?.adminRoleGranted) {
                 return true;
             }
         } else if (statusRes.status === 409) {
@@ -236,9 +236,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
             setWalletBlockedMessage(null);
             return true;
         } catch (err) {
-            const msg = err instanceof Error
-                ? err.message
-                : "Wallet tersebut tidak dapat digunakan untuk akun ini.";
+            const msg = getRpcErrorMessage(err);
             console.warn("Could not verify wallet ownership:", err);
             if (currentRole === "admin") {
                 setWalletBlocked(true);
