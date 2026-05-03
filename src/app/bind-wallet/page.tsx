@@ -8,6 +8,7 @@ import { clearAuth, getStoredUsername, getStoredRole } from "../../utils/auth";
 import { authApiFetch } from "../../utils/api";
 import { getBlockExplorerTxUrl } from "../../utils/explorer";
 import { getRpcErrorMessage } from "../../utils/rpcError";
+import { clearWalletBindIntent, hasWalletBindIntent, setWalletBindIntent } from "../../utils/walletBindIntent";
 
 type BindStatusTone = "neutral" | "error";
 
@@ -25,8 +26,6 @@ type DidStatusResponse = {
   vc?: unknown;
   vcJwt?: string;
 };
-
-const PENDING_BIND_INTENT_KEY = "pending-wallet-bind-intent";
 
 function isAuthExpiredMessage(message: string) {
   return (
@@ -308,7 +307,7 @@ export default function BindWallet() {
       setErrorStatus(getRpcErrorMessage(err) || message);
       console.error("Kesalahan saat menautkan wallet:", err);
     } finally {
-      sessionStorage.removeItem(PENDING_BIND_INTENT_KEY);
+      clearWalletBindIntent();
       setIsBinding(false);
     }
   }, [
@@ -323,11 +322,11 @@ export default function BindWallet() {
   ]);
 
   const connectAndBindWallet = async () => {
-    sessionStorage.setItem(PENDING_BIND_INTENT_KEY, "1");
+    setWalletBindIntent();
     const connectedAccount = await connectWallet();
     const walletAddress = connectedAccount || account;
     if (!walletAddress) {
-      sessionStorage.removeItem(PENDING_BIND_INTENT_KEY);
+      clearWalletBindIntent();
       return;
     }
 
@@ -348,7 +347,7 @@ export default function BindWallet() {
       return;
     }
 
-    if (sessionStorage.getItem(PENDING_BIND_INTENT_KEY) !== "1") {
+    if (!hasWalletBindIntent()) {
       return;
     }
 
