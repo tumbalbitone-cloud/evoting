@@ -7,8 +7,13 @@ import toast from "react-hot-toast";
 import { clearAuth, getStoredUsername, getStoredRole } from "../../utils/auth";
 import { authApiFetch } from "../../utils/api";
 import { getBlockExplorerTxUrl } from "../../utils/explorer";
-import { getRpcErrorMessage } from "../../utils/rpcError";
-import { clearWalletBindIntent, hasWalletBindIntent, setWalletBindIntent } from "../../utils/walletBindIntent";
+import { getRpcErrorMessage, isWalletRequestRejected } from "../../utils/rpcError";
+import {
+  clearWalletBindIntent,
+  getWalletBindIntent,
+  hasWalletBindIntent,
+  setWalletBindIntent,
+} from "../../utils/walletBindIntent";
 
 type BindStatusTone = "neutral" | "error";
 
@@ -227,43 +232,60 @@ export default function BindWallet() {
     setIsBinding(true);
 
     try {
-      const challengeRes = await authApiFetch("/api/did/bind/challenge", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ studentId, userAddress: walletAddress }),
-      });
+      const savedIntent = getWalletBindIntent();
+      const canResumeSignedChallenge =
+        savedIntent?.studentId === studentId &&
+        savedIntent?.walletAddress?.toLowerCase() === walletAddress.toLowerCase();
+      let challengeToken = canResumeSignedChallenge ? savedIntent?.challengeToken : undefined;
+      let signature = canResumeSignedChallenge ? savedIntent?.signature : undefined;
 
-      if (!challengeRes.ok) {
-        const errorData = (await challengeRes.json().catch(() => ({}))) as {
-          error?: string;
-        };
+      setWalletBindIntent({ studentId, walletAddress, challengeToken, signature });
 
-        if (challengeRes.status === 401) {
-          redirectToLogin("Sesi berakhir. Mengalihkan ke halaman login...");
-          return;
+      if (!challengeToken || !signature) {
+        const challengeRes = await authApiFetch("/api/did/bind/challenge", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ studentId, userAddress: walletAddress }),
+        });
+
+        if (!challengeRes.ok) {
+          const errorData = (await challengeRes.json().catch(() => ({}))) as {
+            error?: string;
+          };
+
+          if (challengeRes.status === 401) {
+            clearWalletBindIntent();
+            redirectToLogin("Sesi berakhir. Mengalihkan ke halaman login...");
+            return;
+          }
+
+          throw new Error(errorData.error || `HTTP error! status: ${challengeRes.status}`);
         }
 
-        throw new Error(errorData.error || `HTTP error! status: ${challengeRes.status}`);
+        const challengeData = (await challengeRes.json()) as {
+          success?: boolean;
+          challengeToken?: string;
+          message?: string;
+        };
+        if (!challengeData.success || !challengeData.challengeToken || !challengeData.message) {
+          throw new Error("Challenge wallet tidak valid. Silakan coba lagi.");
+        }
+
+        challengeToken = challengeData.challengeToken;
+        setWalletBindIntent({ studentId, walletAddress, challengeToken });
+
+        const signer = await activeProvider.getSigner();
+        const signerAddress = await signer.getAddress();
+        if (signerAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+          throw new Error("Wallet aktif berubah. Silakan hubungkan ulang wallet yang ingin ditautkan.");
+        }
+
+        signature = await signer.signMessage(challengeData.message);
+        setWalletBindIntent({ studentId, walletAddress, challengeToken, signature });
       }
 
-      const challengeData = (await challengeRes.json()) as {
-        success?: boolean;
-        challengeToken?: string;
-        message?: string;
-      };
-      if (!challengeData.success || !challengeData.challengeToken || !challengeData.message) {
-        throw new Error("Challenge wallet tidak valid. Silakan coba lagi.");
-      }
-
-      const signer = await activeProvider.getSigner();
-      const signerAddress = await signer.getAddress();
-      if (signerAddress.toLowerCase() !== walletAddress.toLowerCase()) {
-        throw new Error("Wallet aktif berubah. Silakan hubungkan ulang wallet yang ingin ditautkan.");
-      }
-
-      const signature = await signer.signMessage(challengeData.message);
       setNeutralStatus("Memverifikasi tanda tangan wallet...");
 
       const res = await authApiFetch("/api/did/bind", {
@@ -275,7 +297,7 @@ export default function BindWallet() {
           studentId,
           userAddress: walletAddress,
           signature,
-          challengeToken: challengeData.challengeToken,
+          challengeToken,
         }),
       });
 
@@ -297,17 +319,22 @@ export default function BindWallet() {
       setAlreadyBound(true);
       setUsedByOther(false);
       setNeutralStatus("Berhasil! Wallet tertaut ke akun mahasiswa.");
+      clearWalletBindIntent();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Gagal menautkan wallet";
       if (isAuthExpiredMessage(message)) {
+        clearWalletBindIntent();
         redirectToLogin("Silakan login kembali. Sesi Anda sudah berakhir.");
         return;
+      }
+
+      if (isWalletRequestRejected(err)) {
+        clearWalletBindIntent();
       }
 
       setErrorStatus(getRpcErrorMessage(err) || message);
       console.error("Kesalahan saat menautkan wallet:", err);
     } finally {
-      clearWalletBindIntent();
       setIsBinding(false);
     }
   }, [

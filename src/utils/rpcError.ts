@@ -4,6 +4,15 @@
  */
 const FALLBACK = "Terjadi kesalahan. Silakan coba lagi atau hubungi admin jika berlanjut.";
 
+export function isWalletRequestRejected(err: unknown): boolean {
+    const msg = typeof (err as any)?.message === "string" ? (err as any).message : "";
+    const shortMessage = typeof (err as any)?.shortMessage === "string" ? (err as any).shortMessage : "";
+    const infoErrorMessage = typeof (err as any)?.info?.error?.message === "string" ? (err as any).info.error.message : "";
+    const code = (err as any)?.code ?? (err as any)?.error?.code ?? (err as any)?.data?.originalError?.code;
+    const str = `${msg} ${shortMessage} ${infoErrorMessage}`.toLowerCase();
+    return code === 4001 || code === "ACTION_REJECTED" || str.includes("user rejected") || str.includes("user denied");
+}
+
 export function getRpcErrorMessage(err: unknown): string {
     if (err == null) return FALLBACK;
 
@@ -17,7 +26,7 @@ export function getRpcErrorMessage(err: unknown): string {
     const str = `${msg} ${reason} ${shortMessage} ${infoErrorMessage}`.toLowerCase();
 
     // User rejected / cancelled in wallet
-    if (code === 4001 || code === "ACTION_REJECTED" || str.includes("user rejected") || str.includes("user denied")) {
+    if (isWalletRequestRejected(err)) {
         if (str.includes("chain") || str.includes("network") || str.includes("wallet_switchethereumchain") || str.includes("wallet_addethereumchain")) {
             return "Pergantian jaringan dibatalkan di wallet.";
         }
