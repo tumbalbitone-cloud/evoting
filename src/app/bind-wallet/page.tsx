@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useWallet } from "../../context/WalletContext";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -25,6 +25,8 @@ type DidStatusResponse = {
   vc?: unknown;
   vcJwt?: string;
 };
+
+const PENDING_BIND_INTENT_KEY = "pending-wallet-bind-intent";
 
 function isAuthExpiredMessage(message: string) {
   return (
@@ -55,6 +57,7 @@ export default function BindWallet() {
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [isBinding, setIsBinding] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
+  const resumedBindIntentRef = useRef(false);
   const router = useRouter();
 
   const setNeutralStatus = useCallback((message: string) => {
@@ -201,8 +204,8 @@ export default function BindWallet() {
     }
   }, [account, studentId, checkStatus]);
 
-  const bindWallet = async () => {
-    if (!account) {
+  const bindWallet = useCallback(async (walletAddress = account, activeProvider = provider) => {
+    if (!walletAddress) {
       toast.error("Hubungkan wallet terlebih dahulu");
       return;
     }
@@ -216,7 +219,7 @@ export default function BindWallet() {
       return;
     }
 
-    if (!provider) {
+    if (!activeProvider) {
       toast.error("Provider wallet tidak tersedia. Coba hubungkan ulang MetaMask.");
       return;
     }
@@ -230,7 +233,7 @@ export default function BindWallet() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ studentId, userAddress: account }),
+        body: JSON.stringify({ studentId, userAddress: walletAddress }),
       });
 
       if (!challengeRes.ok) {
@@ -255,9 +258,9 @@ export default function BindWallet() {
         throw new Error("Challenge wallet tidak valid. Silakan coba lagi.");
       }
 
-      const signer = await provider.getSigner();
+      const signer = await activeProvider.getSigner();
       const signerAddress = await signer.getAddress();
-      if (signerAddress.toLowerCase() !== account.toLowerCase()) {
+      if (signerAddress.toLowerCase() !== walletAddress.toLowerCase()) {
         throw new Error("Wallet aktif berubah. Silakan hubungkan ulang wallet yang ingin ditautkan.");
       }
 
@@ -271,7 +274,7 @@ export default function BindWallet() {
         },
         body: JSON.stringify({
           studentId,
-          userAddress: account,
+          userAddress: walletAddress,
           signature,
           challengeToken: challengeData.challengeToken,
         }),
@@ -305,9 +308,62 @@ export default function BindWallet() {
       setErrorStatus(getRpcErrorMessage(err) || message);
       console.error("Kesalahan saat menautkan wallet:", err);
     } finally {
+      sessionStorage.removeItem(PENDING_BIND_INTENT_KEY);
       setIsBinding(false);
     }
+  }, [
+    account,
+    provider,
+    redirectToLogin,
+    setErrorStatus,
+    setNeutralStatus,
+    studentId,
+    usedByOther,
+    walletBlocked,
+  ]);
+
+  const connectAndBindWallet = async () => {
+    sessionStorage.setItem(PENDING_BIND_INTENT_KEY, "1");
+    const connectedAccount = await connectWallet();
+    const walletAddress = connectedAccount || account;
+    if (!walletAddress) {
+      sessionStorage.removeItem(PENDING_BIND_INTENT_KEY);
+      return;
+    }
+
+    await bindWallet(walletAddress, provider);
   };
+
+  useEffect(() => {
+    if (
+      resumedBindIntentRef.current ||
+      isBinding ||
+      !account ||
+      !provider ||
+      !studentId ||
+      alreadyBound ||
+      usedByOther ||
+      walletBlocked
+    ) {
+      return;
+    }
+
+    if (sessionStorage.getItem(PENDING_BIND_INTENT_KEY) !== "1") {
+      return;
+    }
+
+    resumedBindIntentRef.current = true;
+    void bindWallet(account, provider);
+  }, [
+    account,
+    alreadyBound,
+    bindWallet,
+    isBinding,
+    provider,
+    studentId,
+    usedByOther,
+    walletBlocked,
+  ]);
 
   const registerForElection = async () => {
     if (!vc?.vcJwt || !account) {
@@ -392,11 +448,12 @@ export default function BindWallet() {
               Hubungkan wallet Ethereum Anda untuk ditautkan ke akun mahasiswa.
             </p>
             <button
-              onClick={connectWallet}
-              disabled={walletBlocked || isConnecting}
+              type="button"
+              onClick={connectAndBindWallet}
+              disabled={walletBlocked || isConnecting || isBinding || isCheckingStatus}
               className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold transition"
             >
-              {isConnecting ? "Menghubungkan..." : "Hubungkan Wallet"}
+              {isConnecting || isBinding ? "Memproses Tautan Wallet..." : "Hubungkan & Tautkan Wallet"}
             </button>
             {(walletBlockedMessage || showWalletConflict) && (
               <div className="p-3 rounded-lg text-sm bg-red-500/20 text-red-200 border border-red-500/30">
@@ -418,11 +475,12 @@ export default function BindWallet() {
 
             {showBindButton && (
               <button
-                onClick={bindWallet}
+                type="button"
+                onClick={() => bindWallet()}
                 disabled={isBinding || isCheckingStatus}
                 className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition shadow-lg shadow-blue-600/20 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isBinding ? "Memproses Tautan Wallet..." : "Hubungkan Wallet"}
+                {isBinding ? "Memproses Tautan Wallet..." : "Tautkan Wallet Ini"}
               </button>
             )}
 
@@ -463,6 +521,7 @@ export default function BindWallet() {
                   ✓ Wallet Berhasil Dihubungkan
                 </div>
                 <button
+                  type="button"
                   onClick={registerForElection}
                   disabled={isClaiming}
                   className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-lg shadow-purple-600/20 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -486,6 +545,7 @@ export default function BindWallet() {
 
             {statusTone === "error" && (
               <button
+                type="button"
                 onClick={checkStatus}
                 disabled={isCheckingStatus}
                 className="w-full rounded-xl border border-white/15 bg-white/5 py-3 text-white font-semibold transition hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed"

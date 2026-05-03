@@ -9,7 +9,7 @@ import { getStoredUsername, getStoredRole } from "../utils/auth";
 
 interface WalletContextType {
     account: string | null;
-    connectWallet: () => Promise<void>;
+    connectWallet: () => Promise<string | null>;
     disconnectWallet: () => void;
     isConnected: boolean;
     provider: BrowserProvider | null;
@@ -20,7 +20,7 @@ interface WalletContextType {
 
 const WalletContext = createContext<WalletContextType>({
     account: null,
-    connectWallet: async () => { },
+    connectWallet: async () => null,
     disconnectWallet: () => { },
     isConnected: false,
     provider: null,
@@ -335,7 +335,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         const injectedProvider = getInjectedProvider();
         if (!provider || !injectedProvider) {
             toast.error("Silakan pasang MetaMask terlebih dahulu");
-            return;
+            return null;
         }
         try {
             setIsConnecting(true);
@@ -346,12 +346,14 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
             if (!ok) {
                 setAccount(null);
                 toast.error("Wallet tersebut sudah digunakan oleh akun lain.");
-                return;
+                return null;
             }
             setAccount(next);
+            return next;
         } catch (error) {
             console.error("Koneksi ditolak", error);
             toast.error(getRpcErrorMessage(error));
+            return null;
         } finally {
             setIsConnecting(false);
         }
